@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1130">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Fourier Drawing</title>
+<style>
+  :root { --bg:#0b1130; --card:#141c44; --field:#1a234f; --btn:#1f2a5c;
+          --fg:#e8ecff; --hint:#8a93b5; --accent:#7fdbff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font-family: system-ui, Roboto, sans-serif; }
+  .screen { display: none; flex-direction: column; height: 100vh; height: 100dvh;
+            padding: max(16px, env(safe-area-inset-top)) 16px max(12px, env(safe-area-inset-bottom)); }
+  .screen.on { display: flex; }
+  .body { flex: 1; overflow-y: auto; padding-bottom: 8px; }
+  .bar { display: flex; gap: 8px; padding-top: 10px; }
+  .grow { flex: 1; }
+  h1 { font-size: 24px; margin: 4px 0; }
+  h2 { font-size: 16px; color: var(--accent); margin: 20px 0 2px; }
+  .hint { color: var(--hint); font-size: 13px; line-height: 1.35; margin: 3px 0; white-space: pre-line; }
+  button { background: var(--btn); color: var(--fg); border: 0; border-radius: 10px;
+           padding: 12px 13px; font-size: 15px; }
+  button.accent { background: var(--accent); color: #05102a; font-weight: 700; }
+  button.big { width: 100%; padding: 22px; font-size: 19px; font-weight: 700; margin-top: 22px; }
+  input, textarea { background: var(--field); color: var(--fg); border: 1px solid #2b3a7a;
+                    border-radius: 8px; padding: 9px; font-size: 16px; }
+  textarea { width: 100%; font-family: monospace; font-size: 24px; margin-top: 8px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+  .row input[type=text] { width: 120px; text-align: right; }
+  input.wide { width: 100%; margin-top: 6px; }
+  input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
+  .card { background: var(--card); border-radius: 10px; padding: 10px; margin: 8px 0; }
+  .card .top { display: flex; align-items: center; gap: 10px; }
+  .card img { height: 44px; width: 44px; object-fit: contain; background: #fff2; border-radius: 6px; }
+  .card .line { display: flex; gap: 6px; align-items: center; margin-top: 8px; font-size: 13px; color: var(--hint); }
+  .card .line input { width: 54px; padding: 7px; }
+  .card .line input.color { width: 96px; }
+  canvas.view { display: block; margin: 10px auto; border-radius: 8px; }
+  progress { width: 100%; height: 14px; accent-color: var(--accent); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<section id="home" class="screen on">
+  <div class="body">
+    <h1>Fourier Drawing</h1>
+    <p class="hint">Draw text or shapes with rotating circles, then save it as a video.</p>
+    <div style="height:10vh"></div>
+    <h2>What do you want to draw?</h2>
+    <button class="big" onclick="startMode('text')">Text</button>
+    <p class="hint">Type words in one or more rows.</p>
+    <button class="big" onclick="startMode('images')">Images</button>
+    <p class="hint">Pick images with one shape each. The border is found automatically.</p>
+  </div>
+</section>
+
+<section id="text" class="screen">
+  <div class="body">
+    <h1>Your text</h1>
+    <p class="hint">Each line becomes one row. Each space adds one more letter gap.</p>
+    <textarea id="textInput" rows="5" autocapitalize="characters">HI</textarea>
+  </div>
+  <div class="bar"><button onclick="history.back()">Back</button><span class="grow"></span>
+    <button class="accent" onclick="toSettings()">Next</button></div>
+</section>
+
+<section id="images" class="screen">
+  <div class="body">
+    <h1>Your images</h1>
+    <p class="hint">Row: 1 = top. Size: shape height as a fraction of the video height; 0.15–0.35 for a vertical video. Color: blank = use the Colors setting.</p>
+    <button style="width:100%;margin-top:8px" onclick="document.getElementById('files').click()">+ Add images</button>
+    <input id="files" type="file" accept="image/*" multiple hidden>
+    <div id="imageList"></div>
+  </div>
+  <div class="bar"><button onclick="history.back()">Back</button><span class="grow"></span>
+    <button class="accent" onclick="toSettings()">Next</button></div>
+</section>
+
+<section id="settings" class="screen">
+  <div class="body">
+    <h1>Settings</h1>
+    <p class="hint">Sizes are fractions of the video height. Settings are remembered.</p>
+    <div id="settingsList"></div>
+    <button style="margin-top:22px" onclick="resetSettings()">Reset to defaults</button>
+  </div>
+  <div class="bar"><button onclick="history.back()">Back</button><span class="grow"></span>
+    <button onclick="toPreview()">Preview</button>
+    <button class="accent" onclick="toExport()">Make video</button></div>
+</section>
+
+<section id="preview" class="screen">
+  <div class="body">
+    <h1>Preview</h1>
+    <p class="hint" id="previewNote"></p>
+    <canvas id="view" class="view"></canvas>
+    <input id="scrub" type="range" min="0" value="0">
+    <p class="hint" id="notes"></p>
+  </div>
+  <div class="bar"><button onclick="history.back()">Back</button>
+    <button id="playBtn" onclick="togglePlay()">Pause</button><span class="grow"></span>
+    <button class="accent" onclick="toExport()">Make video</button></div>
+</section>
+
+<section id="export" class="screen">
+  <div class="body">
+    <h1 id="exportTitle">Making video</h1>
+    <p class="hint">Keep this screen open until it finishes. Large sizes and many circles take longer.</p>
+    <p id="exportStatus">Preparing…</p>
+    <progress id="exportBar" max="1" value="0"></progress>
+    <p class="hint" id="exportInfo"></p>
+    <canvas id="doneView" class="view" hidden></canvas>
+  </div>
+  <div class="bar">
+    <button id="cancelBtn" onclick="cancelExport = true">Cancel</button>
+    <button id="newBtn" onclick="go('home')" hidden>New</button>
+    <span class="grow"></span>
+    <button id="shotsBtn" onclick="saveShots()" hidden>Pictures</button>
+    <button id="shareBtn" onclick="shareVideo()" hidden>Share</button>
+    <button id="saveBtn" class="accent" onclick="saveVideo()" hidden>Save</button>
+  </div>
+</section>
+
+<script>
+// ======================= Settings =======================
+// [key, label, default, gray hint]. Sizes are fractions of the video height.
+const GROUPS = {
+  video: ["Video", [
+    ["WIDTH", "Width (px)", 1080, "Vertical phone 1080; landscape 1920. Even number"],
+    ["HEIGHT", "Height (px)", 1920, "Vertical phone 1920; landscape 1080. Even number. 720 × 1280 is about twice as fast"],
+    ["FPS", "Frames per second", 30, "30 is standard; 60 is smoother but takes twice as long"],
+    ["BG", "Background", "#050a1f", "Any color. #050a1f = night blue, #000000 = black"],
+    ["BITRATE", "Bitrate (Mbit/s)", 8, "Quality and file size; 4–12"],
+  ]],
+  look: ["Look", [
+    ["COLORS", "Colors", "hsv", "Colormap or color. Several values (separated by spaces) repeat over letters or images. Maps: hsv, pastel, rainbow, cool, spring, summer, autumn, winter. hsv and pastel end on their start color"],
+    ["LINE_WIDTHS", "Line width", "5", "Trace width in pixels for a 1080-pixel video; 3–8. Several values repeat"],
+    ["GLOW", "Glow", 1, "0 = none, 1 = normal, 2 = strong"],
+    ["ROW_GAP", "Row gap", 0.04, "Space between rows; 0.02–0.08"],
+    ["LABEL", "Label size", 40, "Size of the 'n = …' text in pixels for a 1080-pixel video; 0 hides it"],
+  ]],
+  timing: ["Timing", [
+    ["N_LIST", "Circles per stage", "1 2 3 4 5 7 10 15 20 25 30 40 50", "One stage per value. More circles = sharper shape; up to about 100"],
+    ["STAGE_SEC", "Seconds per stage", 4, "Drawing time of each stage; 2–6"],
+    ["HOLD_SEC", "Pause after stage", 0.5, "Seconds to show each finished shape; 0–1"],
+    ["END_SEC", "Final hold", 3, "Seconds on the finished drawing; 2–5"],
+    ["FADE_SEC", "Circle fade-out", 1, "Seconds the circles take to fade at the end; 0.5–2"],
+  ]],
+  text: ["Text", [
+    ["FONT", "Font", "sans-serif", "A font on your phone: sans-serif, serif, monospace, Roboto"],
+    ["FONT_SIZE", "Font size", 0.2, "Height of a capital letter; 0.1–0.3 for a vertical video"],
+    ["FONT_WEIGHT", "Font weight", 0.02, "Extra stroke thickness; 0–0.05. Larger = more space inside"],
+    ["CORNER", "Corner smoothing", 0.006, "Corner rounding radius; 0–0.01. Too large erases thin parts"],
+    ["LETTER_GAP", "Letter gap", 0.03, "Space between letters; 0.02–0.05. Each space adds one more"],
+  ]],
+  image: ["Images", [
+    ["IMAGE_SIZE", "Default image size", 0.25, "Size given to newly added images; 0.15–0.35"],
+    ["IMAGE_GAP", "Image gap", 0.03, "Space between shapes in a row; 0.02–0.06"],
+    ["EDGE_BLUR", "Edge blur (px)", 2, "Smooths jagged pixel edges; 0–4"],
+    ["MIN_PART", "Ignore small parts", 0.05, "Drop outlines shorter than this fraction of the longest; 0.02–0.2"],
+    ["KEEP_HOLES", "Trace holes", true, "Off = trace only the outer border"],
+    ["MAX_PIXELS", "Max image size (px)", 800, "Large images are shrunk to this for speed; 400–1200"],
+  ]],
+  advanced: ["Advanced", [
+    ["SUB", "Trace points per frame", 10, "Keeps fast circles smooth; 5–20"],
+    ["N_SAMPLES", "Outline samples", 1000, "Points along each outline; 500–2000. Must be more than twice the largest circle count"],
+  ]],
+};
+const ALL = Object.values(GROUPS).flatMap(g => g[1]);
+const INT_KEYS = new Set(["WIDTH", "HEIGHT", "FPS", "SUB", "N_SAMPLES", "MAX_PIXELS"]);
+const LIST_KEYS = new Set(["COLORS", "LINE_WIDTHS", "N_LIST"]);
+const STORE = "fourier-settings";
+const MUXER_URL = "https://cdn.jsdelivr.net/npm/mp4-muxer@5/+esm";
+
+const COLORMAPS = {
+  hsv: x => hsl(x * 360, 100, 50), pastel: x => hsl(x * 360, 90, 75),
+  rainbow: x => rgb(Math.abs(2 * x - 0.5), Math.sin(Math.PI * x), Math.cos(Math.PI * x / 2)),
+  cool: x => rgb(x, 1 - x, 1), spring: x => rgb(1, x, 1 - x), summer: x => rgb(x, 0.5 + x / 2, 0.4),
+  autumn: x => rgb(1, x, 0), winter: x => rgb(0, x, 1 - x / 2),
+};
+function hsl(h, s, l) { return `hsl(${h.toFixed(1)},${s}%,${l}%)`; }
+function rgb(r, g, b) { const c = v => Math.round(255 * Math.min(1, Math.max(0, v))); return `rgb(${c(r)},${c(g)},${c(b)})`; }
+function validColor(c) { return c in COLORMAPS || CSS.supports("color", c); }
+function cycle(a, i) { return a[i % a.length]; }
+function $(id) { return document.getElementById(id); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function defaults() { const o = {}; for (const [k, , d] of ALL) o[k] = typeof d === "boolean" ? d : String(d); return o; }
+function loadSettings() { try { return { ...defaults(), ...JSON.parse(localStorage.getItem(STORE) || "{}") }; } catch { return defaults(); } }
+function saveSettings() { localStorage.setItem(STORE, JSON.stringify(state.settings)); }
+
+const state = { mode: "text", images: [], settings: loadSettings() };
+
+function groupsFor(mode) {
+  return [GROUPS.video, GROUPS.look, GROUPS.timing, mode === "text" ? GROUPS.text : GROUPS.image, GROUPS.advanced];
+}
+
+function readSettings(groups) {
+  const S = {}, bad = (label, raw) => { throw new Error(`${label}: '${raw}' is not valid.`); };
+  for (const [, spec] of groups) for (const [key, label, def] of spec) {
+    const raw = state.settings[key];
+    if (typeof def === "boolean") { S[key] = !!raw; continue; }
+    if (LIST_KEYS.has(key)) {
+      const parts = String(raw).split(/[\s,]+/).filter(Boolean);
+      if (!parts.length) bad(label, raw);
+      if (key === "COLORS") {
+        for (const c of parts) if (!validColor(c)) throw new Error(`Colors: '${c}' is not a colormap or color.`);
+        S[key] = parts;
+      } else {
+        const nums = parts.map(Number);
+        if (nums.some(x => !isFinite(x) || x <= 0)) bad(label, raw);
+        S[key] = key === "N_LIST" ? nums.map(Math.round) : nums;
+      }
+      continue;
+    }
+    if (typeof def === "number") {
+      const v = Number(raw);
+      if (String(raw).trim() === "" || !isFinite(v) || v < 0) bad(label, raw);
+      S[key] = INT_KEYS.has(key) ? Math.round(v) : v;
+      continue;
+    }
+    S[key] = String(raw).trim();
+  }
+  if (!validColor(S.BG) || S.BG in COLORMAPS) throw new Error(`Background: '${S.BG}' is not a color.`);
+  if (S.WIDTH % 2 || S.HEIGHT % 2 || Math.min(S.WIDTH, S.HEIGHT) < 64) throw new Error("Width and height must be even numbers of at least 64.");
+  if (S.FPS < 1 || S.STAGE_SEC <= 0 || S.SUB < 1) throw new Error("Frames per second, seconds per stage and trace points must be above 0.");
+  if (S.N_SAMPLES <= 2 * Math.max(...S.N_LIST)) throw new Error("Outline samples must be more than twice the largest circle count.");
+  return S;
+}
+
+// ======================= Outlines =======================
+function edt1d(f, n, d, v, z) {
+  let k = 0; v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
+  for (let q = 1; q < n; q++) {
+    let s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+    while (s <= z[k]) { k--; s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]); }
+    k++; v[k] = q; z[k] = s; z[k + 1] = Infinity;
+  }
+  k = 0;
+  for (let q = 0; q < n; q++) { while (z[k + 1] < q) k++; d[q] = (q - v[k]) * (q - v[k]) + f[v[k]]; }
+}
+
+function dist2(set, w, h) {   // squared distance from every pixel to the nearest pixel in set
+  const INF = 1e20, n = Math.max(w, h);
+  const f = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
+  const out = new Float64Array(w * h);
+  for (let i = 0; i < w * h; i++) out[i] = set[i] ? 0 : INF;
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) f[y] = out[y * w + x];
+    edt1d(f, h, d, v, z);
+    for (let y = 0; y < h; y++) out[y * w + x] = d[y];
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) f[x] = out[y * w + x];
+    edt1d(f, w, d, v, z);
+    for (let x = 0; x < w; x++) out[y * w + x] = d[x];
+  }
+  return out;
+}
+
+function morph(mask, w, h, r) {   // open then close with a disk: rounds outer and inner corners
+  const r2 = r * r, inv = m => m.map(b => 1 - b);
+  const erode = m => { const d = dist2(inv(m), w, h); return m.map((_, i) => d[i] > r2 ? 1 : 0); };
+  const dilate = m => { const d = dist2(m, w, h); return m.map((_, i) => d[i] <= r2 ? 1 : 0); };
+  return erode(dilate(dilate(erode(mask))));
+}
+
+function boxBlur(F, w, h, r) {   // three box passes ≈ Gaussian; changes F in place
+  if (r < 1) return F;
+  const tmp = new Float32Array(F.length), k = 1 / (2 * r + 1);
+  for (let pass = 0; pass < 3; pass++) {
+    for (let y = 0; y < h; y++) {
+      const o = y * w; let acc = 0;
+      for (let x = -r; x <= r; x++) acc += F[o + Math.min(w - 1, Math.max(0, x))];
+      for (let x = 0; x < w; x++) {
+        tmp[o + x] = acc * k;
+        acc += F[o + Math.min(w - 1, x + r + 1)] - F[o + Math.max(0, x - r)];
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      let acc = 0;
+      for (let y = -r; y <= r; y++) acc += tmp[Math.min(h - 1, Math.max(0, y)) * w + x];
+      for (let y = 0; y < h; y++) {
+        F[y * w + x] = acc * k;
+        acc += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+      }
+    }
+  }
+  return F;
+}
+
+function contours(F, w, h, t) {   // marching squares; returns closed loops of [x, y] pixels
+  const adj = new Map(), pts = new Map();
+  const point = id => {
+    if (pts.has(id)) return;
+    const cell = id >> 1, y = Math.floor(cell / w), x = cell % w, a = F[cell];
+    if (id & 1) { const b = F[cell + w]; pts.set(id, [x, y + (t - a) / (b - a)]); }
+    else { const b = F[cell + 1]; pts.set(id, [x + (t - a) / (b - a), y]); }
+  };
+  const link = (p, q) => {
+    point(p); point(q);
+    if (!adj.has(p)) adj.set(p, []); if (!adj.has(q)) adj.set(q, []);
+    adj.get(p).push(q); adj.get(q).push(p);
+  };
+  for (let y = 0; y < h - 1; y++) for (let x = 0; x < w - 1; x++) {
+    const i = y * w + x;
+    const code = (F[i] > t) << 3 | (F[i + 1] > t) << 2 | (F[i + w + 1] > t) << 1 | (F[i + w] > t);
+    if (code === 0 || code === 15) continue;
+    const T = i * 2, B = (i + w) * 2, L = i * 2 + 1, R = (i + 1) * 2 + 1;
+    const center = (F[i] + F[i + 1] + F[i + w] + F[i + w + 1]) / 4 > t;
+    switch (code) {
+      case 1: case 14: link(L, B); break;
+      case 2: case 13: link(B, R); break;
+      case 3: case 12: link(L, R); break;
+      case 4: case 11: link(T, R); break;
+      case 6: case 9: link(T, B); break;
+      case 7: case 8: link(L, T); break;
+      case 5: if (center) { link(L, T); link(B, R); } else { link(T, R); link(L, B); } break;
+      case 10: if (center) { link(T, R); link(L, B); } else { link(L, T); link(B, R); } break;
+    }
+  }
+  const loops = [], seen = new Set();
+  for (const start of adj.keys()) {
+    if (seen.has(start)) continue;
+    const loop = []; let prev = -1, cur = start;
+    while (cur !== undefined && !seen.has(cur)) {
+      seen.add(cur); loop.push(pts.get(cur));
+      const nb = adj.get(cur), next = nb[0] !== prev ? nb[0] : nb[1];
+      prev = cur; cur = next;
+    }
+    if (loop.length >= 8) loops.push(loop);
+  }
+  return loops;
+}
+
+function perimeter(l) { let p = 0; for (let i = 0; i < l.length; i++) { const a = l[i], b = l[(i + 1) % l.length]; p += Math.hypot(b[0] - a[0], b[1] - a[1]); } return p; }
+
+function renderMask(ch, fontCss, P, weightPx, extra) {
+  const pad = Math.ceil(weightPx / 2 + extra) + 8;
+  const cv = document.createElement("canvas");
+  let ctx = cv.getContext("2d", { willReadFrequently: true });
+  ctx.font = fontCss;
+  cv.width = Math.ceil(ctx.measureText(ch).width + P * 0.6) + 2 * pad;
+  cv.height = Math.ceil(P * 1.6) + 2 * pad;
+  ctx.font = fontCss; ctx.textBaseline = "alphabetic"; ctx.fillStyle = ctx.strokeStyle = "#fff";
+  const base = Math.round(P * 1.15) + pad, x0 = Math.round(P * 0.3) + pad;
+  ctx.fillText(ch, x0, base);
+  if (weightPx > 0) { ctx.lineWidth = weightPx; ctx.lineJoin = "miter"; ctx.miterLimit = 5; ctx.strokeText(ch, x0, base); }
+  const data = ctx.getImageData(0, 0, cv.width, cv.height).data, mask = new Uint8Array(cv.width * cv.height);
+  for (let i = 0; i < mask.length; i++) mask[i] = data[4 * i + 3] > 127 ? 1 : 0;
+  return { mask, w: cv.width, h: cv.height, base };
+}
+
+function textItems(text, S) {
+  const P = 300, f = S.FONT, fam = /\s/.test(f) && !/["',]/.test(f) ? `"${f}"` : f, fontCss = `bold ${P}px ${fam}`;
+  const H = renderMask("H", fontCss, P, 0, 0);
+  let top = -1, bottom = -1;
+  for (let y = 0; y < H.h; y++) for (let x = 0; x < H.w; x++) if (H.mask[y * H.w + x]) { if (top < 0) top = y; bottom = y; break; }
+  if (top < 0) throw new Error("This font cannot be drawn.");
+  const k = S.FONT_SIZE / (bottom - top + 1), weightPx = S.FONT_WEIGHT / k, smoothPx = S.CORNER / k;
+  const cache = new Map(), items = [], notes = [];
+  let n = 0;
+  text.split("\n").forEach((line, ri) => {
+    for (const ch of line) {
+      if (/\s/.test(ch)) { items.push({ rings: [], w: 0, h: S.FONT_SIZE, row: ri + 1 }); continue; }
+      if (!cache.has(ch)) {
+        const g = renderMask(ch, fontCss, P, weightPx, smoothPx);
+        const m = smoothPx > 0.5 ? morph(g.mask, g.w, g.h, smoothPx) : g.mask;
+        const loops = contours(boxBlur(Float32Array.from(m), g.w, g.h, 1), g.w, g.h, 0.5);
+        if (!loops.length) { cache.set(ch, null); notes.push(`'${ch}' could not be drawn; lower Corner smoothing.`); continue; }
+        const rings = loops.map(l => l.map(([x, y]) => [x * k, (g.base - y) * k]));
+        let minX = Infinity, maxX = -Infinity;
+        for (const r of rings) for (const [x] of r) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); }
+        cache.set(ch, { rings, minX, maxX });
+      }
+      const g = cache.get(ch);
+      if (!g) continue;
+      items.push({ rings: g.rings.map(r => r.map(([x, y]) => [x - g.minX, y])), w: g.maxX - g.minX,
+                   h: S.FONT_SIZE, row: ri + 1, style: cycle(S.COLORS, n), lw: cycle(S.LINE_WIDTHS, n) });
+      n++;
+    }
+  });
+  return { items, notes };
+}
+
+function otsu(gray) {
+  const hist = new Float64Array(256); for (const g of gray) hist[g]++;
+  let sum = 0; for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let wB = 0, sumB = 0, best = -1, thr = 127;
+  for (let i = 0; i < 256; i++) {
+    wB += hist[i]; if (!wB) continue;
+    const wF = gray.length - wB; if (!wF) break;
+    sumB += i * hist[i];
+    const between = wB * wF * (sumB / wB - (sum - sumB) / wF) ** 2;
+    if (between > best) { best = between; thr = i; }
+  }
+  return thr;
+}
+
+function imageLoops(bmp, S) {
+  const sc = Math.min(1, S.MAX_PIXELS / Math.max(bmp.width, bmp.height));
+  const w = Math.max(2, Math.round(bmp.width * sc)), h = Math.max(2, Math.round(bmp.height * sc));
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data, N = w * h, mask = new Uint8Array(N);
+  let aMin = 255, aMax = 0;
+  for (let i = 0; i < N; i++) { const a = d[4 * i + 3]; if (a < aMin) aMin = a; if (a > aMax) aMax = a; }
+  if (aMin < 128 && aMax >= 128) {                  // transparent background: use alpha
+    for (let i = 0; i < N; i++) mask[i] = d[4 * i + 3] >= 128 ? 1 : 0;
+  } else {
+    const gray = new Uint8Array(N);
+    for (let i = 0; i < N; i++) gray[i] = Math.round(0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2]);
+    const thr = otsu(gray);
+    for (let i = 0; i < N; i++) mask[i] = gray[i] > thr ? 1 : 0;
+    let edge = 0;
+    for (let x = 0; x < w; x++) edge += mask[x] + mask[(h - 1) * w + x];
+    for (let y = 0; y < h; y++) edge += mask[y * w] + mask[y * w + w - 1];
+    if (edge / (2 * w + 2 * h) > 0.5) for (let i = 0; i < N; i++) mask[i] ^= 1;   // border is background
+  }
+  const blur = Math.round(S.EDGE_BLUR), pad = 3 * blur + 2, W = w + 2 * pad, H = h + 2 * pad;
+  const F = new Float32Array(W * H);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) F[(y + pad) * W + x + pad] = mask[y * w + x];
+  return contours(boxBlur(F, W, H, blur), W, H, 0.5);
+}
+
+function imageItems(images, S) {
+  const items = [], notes = [];
+  images.forEach((im, i) => {
+    let loops = imageLoops(im.bitmap, S);
+    if (!loops.length) throw new Error(`${im.name}: no shape found.`);
+    const per = loops.map(perimeter), maxP = Math.max(...per);
+    loops = loops.map((l, j) => [l, per[j]]).filter(([, p]) => p >= S.MIN_PART * maxP)
+                 .sort((a, b) => b[1] - a[1]).map(([l]) => l);
+    if (!S.KEEP_HOLES) loops = loops.slice(0, 1);
+    notes.push(`${im.name}: ${loops.length} outline(s)`);
+    loops = loops.map(l => l.map(([x, y]) => [x, -y]));            // image rows go down; flip y
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const l of loops) for (const [x, y] of l) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    const s = im.size / (y1 - y0);
+    items.push({ rings: loops.map(l => l.map(([x, y]) => [(x - x0) * s, (y - y0) * s])), w: (x1 - x0) * s,
+                 h: im.size, row: im.row, style: im.color || cycle(S.COLORS, i), lw: cycle(S.LINE_WIDTHS, i) });
+  });
+  return { items, notes };
+}
+
+function layout(items, gap, rowGap) {   // rows left to right; center each row and the whole block
+  const rows = [...new Set(items.map(it => it.row))].sort((a, b) => a - b);
+  const rowH = rows.map(r => Math.max(...items.filter(it => it.row === r).map(it => it.h)));
+  let top = (rowH.reduce((a, b) => a + b, 0) + rowGap * (rows.length - 1)) / 2;
+  rows.forEach((r, ri) => {
+    const row = items.filter(it => it.row === r), h = rowH[ri];
+    let x = -(row.reduce((a, it) => a + it.w, 0) + gap * (row.length - 1)) / 2;
+    for (const it of row) {
+      const ox = x, oy = top - h / 2 - it.h / 2;
+      it.rings = it.rings.map(ring => ring.map(([px, py]) => [px + ox, py + oy]));
+      x += it.w + gap;
+    }
+    top -= h + rowGap;
+  });
+  return items.filter(it => it.rings.length);
+}
+
+function buildItems(mode, S, data) {
+  const { items, notes } = mode === "text" ? textItems(data, S) : imageItems(data, S);
+  const placed = layout(items, mode === "text" ? S.LETTER_GAP : S.IMAGE_GAP, S.ROW_GAP);
+  if (!placed.length) throw new Error("There is nothing to draw.");
+  const halfW = S.WIDTH / S.HEIGHT / 2;
+  if (placed.some(it => it.rings.some(r => r.some(([x, y]) => Math.abs(x) > halfW || Math.abs(y) > 0.5))))
+    notes.push("Warning: the drawing is larger than the frame. Lower the sizes or gaps.");
+  return { items: placed, notes };
+}
+
+// ======================= Fourier animation =======================
+function sampleOutline(ring, n) {
+  const m = ring.length, cum = new Float64Array(m + 1);
+  for (let i = 0; i < m; i++) { const a = ring[i], b = ring[(i + 1) % m]; cum[i + 1] = cum[i] + Math.hypot(b[0] - a[0], b[1] - a[1]); }
+  const L = cum[m], re = new Float64Array(n), im = new Float64Array(n);
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const s = L * i / n;
+    while (cum[j + 1] < s) j++;
+    const seg = cum[j + 1] - cum[j], u = seg > 0 ? (s - cum[j]) / seg : 0, a = ring[j], b = ring[(j + 1) % m];
+    re[i] = a[0] + u * (b[0] - a[0]); im[i] = a[1] + u * (b[1] - a[1]);
+  }
+  return [re, im];
+}
+
+function fourier(re, im) {   // center term plus all epicycles, largest first
+  const N = re.length, cs = new Float64Array(N), sn = new Float64Array(N);
+  for (let i = 0; i < N; i++) { cs[i] = Math.cos(2 * Math.PI * i / N); sn[i] = Math.sin(2 * Math.PI * i / N); }
+  let dc = [0, 0]; const terms = [];
+  for (let k = 0; k < N; k++) {
+    let sr = 0, si = 0;
+    for (let n = 0, idx = 0; n < N; n++, idx = (idx + k) % N) {
+      sr += re[n] * cs[idx] + im[n] * sn[idx];
+      si += im[n] * cs[idx] - re[n] * sn[idx];
+    }
+    sr /= N; si /= N;
+    if (k === 0) dc = [sr, si];
+    else terms.push({ f: k < N / 2 ? k : k - N, re: sr, im: si, r: Math.hypot(sr, si) });
+  }
+  terms.sort((a, b) => b.r - a.r);
+  return { dc, terms };
+}
+
+function colorTable(spec, count) {
+  const map = COLORMAPS[spec];
+  return Array.from({ length: count }, (_, q) => map ? map(q / count) : spec);
+}
+
+class Drawing {
+  constructor(S, items) {
+    this.S = S; this.N = S.N_LIST;
+    const fps = S.FPS, L = this.N.length, nMax = Math.max(...this.N);
+    this.drawFrames = Math.max(2, Math.round(S.STAGE_SEC * fps));
+    this.stageFrames = this.drawFrames + Math.round(S.HOLD_SEC * fps);
+    this.stagesEnd = L * this.stageFrames;
+    this.total = this.stagesEnd + Math.round(S.END_SEC * fps);
+    this.fadeFrames = Math.max(1, Math.round(Math.min(S.FADE_SEC, S.END_SEC) * fps));
+    this.T = (this.drawFrames - 1) * S.SUB + 1;            // time points; last one closes the shape
+    const omitted = new Float64Array(L); let total = 0;
+    this.contours = [];
+    for (const it of items) {
+      const colors = colorTable(it.style, this.drawFrames - 1);
+      for (const ring of it.rings) {
+        const [re, im] = sampleOutline(ring, S.N_SAMPLES);
+        const { dc, terms } = fourier(re, im);
+        const suffix = new Float64Array(terms.length + 1);
+        for (let j = terms.length - 1; j >= 0; j--) suffix[j] = suffix[j + 1] + terms[j].r ** 2;
+        total += suffix[0];
+        this.N.forEach((n, s) => { omitted[s] += suffix[Math.min(n, terms.length)]; });
+        const c = terms.slice(0, nMax);
+        const paths = this.N.map(n => {
+          const xs = new Float32Array(this.T), ys = new Float32Array(this.T), m = Math.min(n, c.length);
+          for (let i = 0; i < this.T; i++) {
+            const t = i / (this.T - 1); let x = dc[0], y = dc[1];
+            for (let j = 0; j < m; j++) {
+              const a = 2 * Math.PI * c[j].f * t, ca = Math.cos(a), sa = Math.sin(a);
+              x += c[j].re * ca - c[j].im * sa; y += c[j].re * sa + c[j].im * ca;
+            }
+            xs[i] = x; ys[i] = y;
+          }
+          return [xs, ys];
+        });
+        this.contours.push({ dc, c, paths, colors, lw: it.lw });
+      }
+    }
+    // RMS distance from the true outlines, as % of the drawing's RMS size (Parseval).
+    this.err = Array.from(omitted, o => 100 * Math.sqrt(o / total));
+  }
+
+  state(f) {   // stage, time index, circle opacity, ghost on/off
+    if (f < this.stagesEnd) {
+      const s = Math.floor(f / this.stageFrames), j = f % this.stageFrames;
+      return [s, Math.min(j, this.drawFrames - 1) * this.S.SUB, 1, s > 0];
+    }
+    return [this.N.length - 1, this.T - 1, Math.max(0, 1 - (f - this.stagesEnd) / this.fadeFrames), false];
+  }
+
+  draw(ctx, f, W, H) {
+    const S = this.S, SUB = S.SUB, px = Math.min(W, H) / 1080;
+    const [s, i, fade, ghost] = this.state(f), n = this.N[s];
+    const X = x => W / 2 + x * H, Y = y => H / 2 - y * H;
+    ctx.globalAlpha = 1; ctx.fillStyle = S.BG; ctx.fillRect(0, 0, W, H);
+    ctx.lineJoin = "round";
+
+    if (ghost) {                                   // previous stage, faint
+      ctx.globalAlpha = 0.2; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5 * px; ctx.lineCap = "round";
+      for (const C of this.contours) {
+        const [xs, ys] = C.paths[s - 1];
+        ctx.beginPath(); ctx.moveTo(X(xs[0]), Y(ys[0]));
+        for (let k = 1; k < xs.length; k++) ctx.lineTo(X(xs[k]), Y(ys[k]));
+        ctx.stroke();
+      }
+    }
+    const layers = S.GLOW > 0 ? [[Math.min(1, 0.18 * S.GLOW), 1 + 2 * S.GLOW, "butt"], [1, 1, "round"]] : [[1, 1, "round"]];
+    for (const [alpha, widen, cap] of layers) {    // glow, then the colored trace
+      ctx.globalAlpha = alpha; ctx.lineCap = cap;
+      for (const C of this.contours) {
+        const [xs, ys] = C.paths[s];
+        ctx.lineWidth = C.lw * px * widen;
+        for (let q = 0, a = 0; a < i; q++, a += SUB) {
+          const b = Math.min(i, a + SUB);
+          ctx.strokeStyle = C.colors[q];
+          ctx.beginPath(); ctx.moveTo(X(xs[a]), Y(ys[a]));
+          for (let k = a + 1; k <= b; k++) ctx.lineTo(X(xs[k]), Y(ys[k]));
+          ctx.stroke();
+        }
+      }
+    }
+    if (fade > 0) {                                // circles and arm
+      const t = i / (this.T - 1);
+      ctx.strokeStyle = "#fff"; ctx.lineCap = "round";
+      for (const C of this.contours) {
+        let x = C.dc[0], y = C.dc[1];
+        const m = Math.min(n, C.c.length), r0 = C.c[0].r, ax = [X(x)], ay = [Y(y)];
+        ctx.lineWidth = 1.3 * px;
+        for (let j = 0; j < m; j++) {
+          const cj = C.c[j];
+          ctx.globalAlpha = (0.06 + 0.4 * Math.sqrt(cj.r / r0)) * fade;
+          ctx.beginPath(); ctx.arc(X(x), Y(y), cj.r * H, 0, 2 * Math.PI); ctx.stroke();
+          const a = 2 * Math.PI * cj.f * t, ca = Math.cos(a), sa = Math.sin(a);
+          x += cj.re * ca - cj.im * sa; y += cj.re * sa + cj.im * ca;
+          ax.push(X(x)); ay.push(Y(y));
+        }
+        ctx.globalAlpha = 0.6 * fade; ctx.lineWidth = 1.5 * px;
+        ctx.beginPath(); ctx.moveTo(ax[0], ay[0]);
+        for (let k = 1; k < ax.length; k++) ctx.lineTo(ax[k], ay[k]);
+        ctx.stroke();
+      }
+    }
+    if (S.LABEL > 0) {
+      ctx.globalAlpha = 0.85; ctx.fillStyle = "#fff";
+      ctx.font = `${S.LABEL * px}px monospace`; ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.fillText(`n = ${String(n).padEnd(3)}  error ${this.err[s].toFixed(1).padStart(4)}%`, W / 2, H * 0.03);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  snapFrames() {   // [label, frame]: first, 1/3, 2/3 and last stage, plus the final frame
+    const L = this.N.length, stages = [...new Set([0, Math.floor(L / 3), Math.floor(2 * L / 3), L - 1])];
+    return [...stages.map(s => [`n${String(this.N[s]).padStart(3, "0")}`, (s + 1) * this.stageFrames - 1]),
+            ["final", this.total - 1]];
+  }
+}
+
+// ======================= Screens =======================
+let current = "home";
+function show(id) {
+  if (current === "preview") stopPreview();
+  if (current === "export" && exporting) cancelExport = true;
+  document.querySelectorAll(".screen").forEach(el => el.classList.toggle("on", el.id === id));
+  current = id;
+  if (id === "settings") renderSettings();
+  if (id === "images") renderImages();
+  if (id === "preview") startPreview();
+}
+function go(id) { history.pushState({ screen: id }, ""); show(id); }
+window.addEventListener("popstate", e => show(e.state?.screen || "home"));
+history.replaceState({ screen: "home" }, "");
+
+function startMode(mode) { state.mode = mode; go(mode === "text" ? "text" : "images"); }
+
+function toSettings() {
+  if (state.mode === "text" && !$("textInput").value.trim()) return alert("Please type some text.");
+  if (state.mode === "images" && !state.images.length) return alert("Please add at least one image.");
+  go("settings");
+}
+
+function renderSettings() {
+  const list = $("settingsList"); list.innerHTML = "";
+  for (const [title, spec] of groupsFor(state.mode)) {
+    const h = document.createElement("h2"); h.textContent = title; list.append(h);
+    for (const [key, label, def, hint] of spec) {
+      const row = document.createElement("div"); row.className = "row";
+      const lab = document.createElement("span"); lab.textContent = label; row.append(lab);
+      const input = document.createElement("input");
+      if (typeof def === "boolean") {
+        input.type = "checkbox"; input.checked = !!state.settings[key];
+        input.onchange = () => { state.settings[key] = input.checked; saveSettings(); };
+      } else {
+        input.type = "text"; input.value = state.settings[key];
+        input.inputMode = typeof def === "number" ? "decimal" : "text";
+        input.autocapitalize = "off"; input.spellcheck = false;
+        input.oninput = () => { state.settings[key] = input.value; saveSettings(); };
+      }
+      list.append(row);
+      if (LIST_KEYS.has(key)) { input.className = "wide"; list.append(input); } else row.append(input);
+      const p = document.createElement("p"); p.className = "hint"; p.textContent = hint; list.append(p);
+    }
+  }
+}
+
+function resetSettings() { state.settings = defaults(); saveSettings(); renderSettings(); }
+
+$("files").onchange = async e => {
+  for (const file of e.target.files) {
+    try {
+      const bitmap = await createImageBitmap(file);
+      state.images.push({ name: file.name, bitmap, url: URL.createObjectURL(file), row: "1", size: state.settings.IMAGE_SIZE, color: "" });
+    } catch { alert(`${file.name} could not be opened.`); }
+  }
+  e.target.value = ""; renderImages();
+};
+
+function renderImages() {
+  const box = $("imageList"); box.innerHTML = "";
+  if (!state.images.length) {
+    const p = document.createElement("p"); p.className = "hint";
+    p.textContent = "No images yet. Silhouettes, logos and drawings on a plain or transparent background work best.";
+    box.append(p); return;
+  }
+  state.images.forEach((im, i) => {
+    const card = document.createElement("div"); card.className = "card";
+    card.innerHTML = `<div class="top"><img><span class="grow"></span><button>✕</button></div><div class="line"></div>`;
+    card.querySelector("img").src = im.url;
+    card.querySelector(".grow").textContent = im.name;
+    card.querySelector("button").onclick = () => { state.images.splice(i, 1); renderImages(); };
+    const line = card.querySelector(".line");
+    for (const [name, key, cls] of [["Row", "row", ""], ["Size", "size", ""], ["Color", "color", "color"]]) {
+      const lab = document.createElement("span"); lab.textContent = name;
+      const input = document.createElement("input"); input.type = "text"; input.value = im[key]; input.className = cls;
+      input.inputMode = key === "color" ? "text" : "decimal"; input.autocapitalize = "off";
+      input.oninput = () => { im[key] = input.value; };
+      line.append(lab, input);
+    }
+    box.append(card);
+  });
+}
+
+function collect() {
+  try {
+    const S = readSettings(groupsFor(state.mode));
+    if (state.mode === "text") {
+      const text = $("textInput").value.replace(/^\n+|\n+$/g, "");
+      if (!text.trim()) throw new Error("Please type some text.");
+      return [S, text];
+    }
+    if (!state.images.length) throw new Error("Please add at least one image.");
+    return [S, state.images.map(im => {
+      const row = Number(im.row), size = Number(im.size), color = im.color.trim();
+      if (!Number.isInteger(row) || !(size > 0)) throw new Error(`${im.name}: row must be a whole number and size a positive number.`);
+      if (color && !validColor(color)) throw new Error(`${im.name}: '${color}' is not a colormap or color.`);
+      return { name: im.name, bitmap: im.bitmap, row, size, color };
+    })];
+  } catch (e) { alert(e.message); return null; }
+}
+
+function fitCanvas(cv, W, H, maxHFrac) {
+  const dpr = window.devicePixelRatio || 1, availW = cv.parentElement.clientWidth || window.innerWidth - 32;
+  const s = Math.min(availW / W, window.innerHeight * maxHFrac / H);
+  cv.style.width = Math.round(W * s) + "px"; cv.style.height = Math.round(H * s) + "px";
+  cv.width = Math.round(W * s * dpr); cv.height = Math.round(H * s * dpr);
+}
+
+// ======================= Preview =======================
+let preview = null, playing = false, raf = 0, t0 = 0;
+
+function toPreview() { if (collect()) go("preview"); }
+
+async function startPreview() {
+  const got = collect(); if (!got) return history.back();
+  const [S, data] = got;
+  $("previewNote").textContent = "Building preview…"; $("notes").textContent = "";
+  await sleep(30);
+  try {
+    const { items, notes } = buildItems(state.mode, S, data);
+    preview = new Drawing(S, items);
+    $("notes").textContent = notes.join("\n");
+  } catch (e) { alert(e.message); return history.back(); }
+  if (current !== "preview") return;
+  fitCanvas($("view"), S.WIDTH, S.HEIGHT, 0.58);
+  $("scrub").max = preview.total - 1; $("scrub").value = 0;
+  $("previewNote").textContent = "Plays in real time. The saved video has every frame, even if this preview stutters.";
+  playing = true; $("playBtn").textContent = "Pause"; t0 = performance.now();
+  raf = requestAnimationFrame(loop);
+}
+
+function drawPreview(f) { const cv = $("view"); preview.draw(cv.getContext("2d"), f, cv.width, cv.height); }
+
+function loop(now) {
+  if (!playing || !preview) return;
+  const f = Math.floor((now - t0) / 1000 * preview.S.FPS) % preview.total;
+  drawPreview(f); $("scrub").value = f;
+  raf = requestAnimationFrame(loop);
+}
+
+function togglePlay() {
+  if (!preview) return;
+  if (playing) { stopPreview(); return; }
+  t0 = performance.now() - Number($("scrub").value) / preview.S.FPS * 1000;
+  playing = true; $("playBtn").textContent = "Pause"; raf = requestAnimationFrame(loop);
+}
+
+function stopPreview() { playing = false; cancelAnimationFrame(raf); $("playBtn").textContent = "Play"; }
+
+$("scrub").oninput = () => { if (!preview) return; stopPreview(); drawPreview(Number($("scrub").value)); };
+
+// ======================= Export =======================
+let exporting = false, cancelExport = false, result = null;
+
+function toExport() {
+  const got = collect(); if (!got) return;
+  go("export"); runExport(...got);
+}
+
+async function pickConfig(S) {
+  for (const codec of ["avc1.640033", "avc1.4D0033", "avc1.420033", "avc1.640028", "avc1.42001F"]) {
+    const config = { codec, width: S.WIDTH, height: S.HEIGHT, bitrate: Math.round(S.BITRATE * 1e6),
+                     framerate: S.FPS, avc: { format: "avc" } };
+    try { const r = await VideoEncoder.isConfigSupported(config); if (r.supported) return r.config; } catch {}
+  }
+  throw new Error("This phone cannot make an MP4 of this size. Try 720 × 1280.");
+}
+
+function setExportButtons(done) {
+  $("cancelBtn").hidden = done; $("newBtn").hidden = !done;
+  for (const id of ["shotsBtn", "shareBtn", "saveBtn"]) $(id).hidden = !(done && result);
+}
+
+function fmtTime(sec) { sec = Math.round(sec); return sec >= 60 ? `${Math.floor(sec / 60)} min ${sec % 60} s` : `${sec} s`; }
+
+async function runExport(S, data) {
+  exporting = true; cancelExport = false; result = null;
+  $("exportTitle").textContent = "Making video"; $("exportStatus").textContent = "Preparing outlines…";
+  $("exportBar").value = 0; $("exportInfo").textContent = ""; $("doneView").hidden = true;
+  setExportButtons(false);
+  let lock = null, encoder = null;
+  try {
+    if (!("VideoEncoder" in window)) throw new Error("This browser cannot make videos. Please use an up-to-date Chrome over https.");
+    await sleep(30);
+    const { items, notes } = buildItems(state.mode, S, data);
+    const d = new Drawing(S, items);
+    let mod;
+    try { mod = await import(MUXER_URL); } catch { throw new Error("Could not load the video tool. Check your internet connection."); }
+    const { Muxer, ArrayBufferTarget } = mod;
+    const config = await pickConfig(S);
+    const W = S.WIDTH, H = S.HEIGHT, canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const muxer = new Muxer({ target: new ArrayBufferTarget(), video: { codec: "avc", width: W, height: H }, fastStart: "in-memory" });
+    let encError = null;
+    encoder = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { encError = e; } });
+    encoder.configure(config);
+    try { lock = await navigator.wakeLock?.request("screen"); } catch {}
+
+    const start = performance.now(), frameUs = 1e6 / S.FPS;
+    for (let f = 0; f < d.total; f++) {
+      if (cancelExport) throw new Error("CANCELLED");
+      if (encError) throw encError;
+      d.draw(ctx, f, W, H);
+      const frame = new VideoFrame(canvas, { timestamp: Math.round(f * frameUs), duration: Math.round(frameUs) });
+      encoder.encode(frame, { keyFrame: f % (S.FPS * 2) === 0 });
+      frame.close();
+      while (encoder.encodeQueueSize > 4) await sleep(1);
+      if (f % 3 === 0 || f === d.total - 1) {
+        const done = f + 1, el = (performance.now() - start) / 1000;
+        $("exportBar").value = done / d.total;
+        $("exportStatus").textContent = `Frame ${done} of ${d.total}`;
+        $("exportInfo").textContent = `About ${fmtTime(el / done * (d.total - done))} left`;
+        await sleep(0);
+      }
+    }
+    await encoder.flush(); muxer.finalize(); encoder.close(); encoder = null;
+
+    $("exportStatus").textContent = "Making pictures…";
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
+    const base = `fourier_${state.mode}_${stamp}`, shots = [];
+    for (const [label, f] of d.snapFrames()) {
+      d.draw(ctx, f, W, H);
+      const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
+      shots.push(new File([blob], `${base}_${label}.png`, { type: "image/png" }));
+    }
+    const video = new File([muxer.target.buffer], `${base}.mp4`, { type: "video/mp4" });
+    result = { video, shots };
+
+    $("exportTitle").textContent = "Done";
+    $("exportStatus").textContent = `Video ready: ${fmtTime(d.total / S.FPS)} long, ${(video.size / 1e6).toFixed(1)} MB.`;
+    $("exportInfo").textContent = ["Tap Save to keep it, Share to send it, or Pictures for the screenshots.", ...notes].join("\n");
+    const dv = $("doneView"); dv.hidden = false;
+    fitCanvas(dv, W, H, 0.45); d.draw(dv.getContext("2d"), d.total - 1, dv.width, dv.height);
+  } catch (e) {
+    try { encoder?.close(); } catch {}
+    $("exportTitle").textContent = e.message === "CANCELLED" ? "Cancelled" : "Something went wrong";
+    $("exportStatus").textContent = e.message === "CANCELLED" ? "The video was not finished." : String(e.message || e);
+  } finally {
+    exporting = false;
+    try { await lock?.release(); } catch {}
+    setExportButtons(true);
+  }
+}
+
+function saveBlob(file) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = file.name;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+function saveVideo() { if (result) saveBlob(result.video); }
+async function shareVideo() {
+  if (!result) return;
+  if (navigator.canShare?.({ files: [result.video] })) {
+    try { await navigator.share({ files: [result.video], title: "Fourier drawing" }); } catch {}
+  } else alert("Sharing is not available here. Use Save instead.");
+}
+async function saveShots() {
+  if (!result) return;
+  if (navigator.canShare?.({ files: result.shots })) {
+    try { await navigator.share({ files: result.shots, title: "Fourier drawing pictures" }); } catch {}
+  } else for (const f of result.shots) { saveBlob(f); await sleep(400); }
+}
+</script>
+</body>
+  </html>
