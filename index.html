@@ -139,7 +139,7 @@ const GROUPS = {
     ["COLORS", "Colors", "hsv", "Colormap or color. Several values (separated by spaces) repeat over letters or images. Maps: hsv, pastel, rainbow, cool, spring, summer, autumn, winter. hsv and pastel end on their start color"],
     ["LINE_WIDTHS", "Line width", "5", "Trace width in pixels for a 1080-pixel video; 3–8. Several values repeat"],
     ["GLOW", "Glow", 1, "0 = none, 1 = normal, 2 = strong"],
-    ["ROW_GAP", "Row gap", 0.04, "Space between rows; 0.02–0.08"],
+    ["FIT", "Fit to frame", 0.9, "Shrinks the drawing if it is wider or taller than this fraction of the frame; 0 = off. Font and image sizes become maximums"],
     ["LABEL", "Label size", 40, "Size of the 'n = …' text in pixels for a 1080-pixel video; 0 hides it"],
     ["LABEL_POS", "Label height", 0.97, "Height of the label's top edge from the bottom; 0.9 = 90%. 0.97 = current position"],
     ["LABEL_TEXT", "Extra label text", "", "Shown on a line under 'n = …  error …'. Blank = none"],
@@ -155,14 +155,16 @@ const GROUPS = {
   ]],
   text: ["Text", [
     ["FONT", "Font", "sans-serif", "A font on your phone: sans-serif, serif, monospace, Roboto"],
-    ["FONT_SIZE", "Font size", 0.2, "Height of a capital letter; 0.1–0.3 for a vertical video"],
-    ["FONT_WEIGHT", "Font weight", 0.02, "Extra stroke thickness; 0–0.05. Larger = more space inside"],
-    ["CORNER", "Corner smoothing", 0.006, "Corner rounding radius; 0–0.01. Too large erases thin parts"],
-    ["LETTER_GAP", "Letter gap", 0.03, "Space between letters; 0.02–0.05. Each space adds one more"],
+    ["FONT_SIZE", "Font size", 0.2, "Height of a capital letter; 0.1–0.3 for a vertical video. Shrinks automatically if rows are too long (see Fit to frame)"],
+    ["WEIGHT_REL", "Font weight", 0.1, "Extra stroke thickness as a fraction of the font size; 0–0.25. Larger = more space inside"],
+    ["CORNER_REL", "Corner smoothing", 0.03, "Corner rounding as a fraction of the font size; 0–0.05. Too large erases thin parts"],
+    ["LETTER_REL", "Letter gap", 0.15, "Space between letters as a fraction of the font size; 0.1–0.25. Each space adds one more"],
+    ["LINE_REL", "Line gap", 0.2, "Space between lines as a fraction of the font size; 0.1–0.4"],
   ]],
   image: ["Images", [
     ["IMAGE_SIZE", "Default image size", 0.25, "Size given to newly added images; 0.15–0.35"],
     ["IMAGE_GAP", "Image gap", 0.03, "Space between shapes in a row; 0.02–0.06"],
+    ["ROW_GAP", "Row gap", 0.04, "Space between rows; 0.02–0.08"],
     ["EDGE_BLUR", "Edge blur (px)", 2, "Smooths jagged pixel edges; 0–4"],
     ["MIN_PART", "Ignore small parts", 0.05, "Drop outlines shorter than this fraction of the longest; 0.02–0.2"],
     ["KEEP_HOLES", "Trace holes", true, "Off = trace only the outer border"],
@@ -364,7 +366,8 @@ function textItems(text, S) {
   let top = -1, bottom = -1;
   for (let y = 0; y < H.h; y++) for (let x = 0; x < H.w; x++) if (H.mask[y * H.w + x]) { if (top < 0) top = y; bottom = y; break; }
   if (top < 0) throw new Error("This font cannot be drawn.");
-  const k = S.FONT_SIZE / (bottom - top + 1), weightPx = S.FONT_WEIGHT / k, smoothPx = S.CORNER / k;
+  // Weight and smoothing are fractions of the capital height, so the letter shape does not depend on the font size.
+  const cap = bottom - top + 1, k = S.FONT_SIZE / cap, weightPx = S.WEIGHT_REL * cap, smoothPx = S.CORNER_REL * cap;
   const cache = new Map(), items = [], notes = [];
   let n = 0;
   text.split("\n").forEach((line, ri) => {
@@ -470,11 +473,23 @@ function layout(items, gap, rowGap) {   // rows left to right; center each row a
 
 function buildItems(mode, S, data) {
   const { items, notes } = mode === "text" ? textItems(data, S) : imageItems(data, S);
-  const placed = layout(items, mode === "text" ? S.LETTER_GAP : S.IMAGE_GAP, S.ROW_GAP);
+  const placed = mode === "text"
+    ? layout(items, S.LETTER_REL * S.FONT_SIZE, S.LINE_REL * S.FONT_SIZE)
+    : layout(items, S.IMAGE_GAP, S.ROW_GAP);
   if (!placed.length) throw new Error("There is nothing to draw.");
   const halfW = S.WIDTH / S.HEIGHT / 2;
-  if (placed.some(it => it.rings.some(r => r.some(([x, y]) => Math.abs(x) > halfW || Math.abs(y) > 0.5))))
-    notes.push("Warning: the drawing is larger than the frame. Lower the sizes or gaps.");
+  let ex = 0, ey = 0;                              // half-width and half-height of the drawing
+  for (const it of placed) for (const r of it.rings) for (const [x, y] of r) { ex = Math.max(ex, Math.abs(x)); ey = Math.max(ey, Math.abs(y)); }
+  if (S.FIT > 0) {                                 // shrink everything to fit the frame
+    const s = Math.min(1, S.FIT * halfW / ex, S.FIT * 0.5 / ey);
+    if (s < 1) {
+      for (const it of placed) it.rings = it.rings.map(r => r.map(([x, y]) => [x * s, y * s]));
+      ex *= s; ey *= s;
+      notes.push(mode === "text" ? `Font size reduced to ${(S.FONT_SIZE * s).toFixed(3)} to fit the frame.`
+                                 : `Images shrunk to ${Math.round(100 * s)}% to fit the frame.`);
+    }
+  }
+  if (ex > halfW || ey > 0.5) notes.push("Warning: the drawing is larger than the frame. Lower the sizes or gaps.");
   return { items: placed, notes };
 }
 
