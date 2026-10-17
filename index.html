@@ -141,6 +141,10 @@ const GROUPS = {
     ["GLOW", "Glow", 1, "0 = none, 1 = normal, 2 = strong"],
     ["ROW_GAP", "Row gap", 0.04, "Space between rows; 0.02–0.08"],
     ["LABEL", "Label size", 40, "Size of the 'n = …' text in pixels for a 1080-pixel video; 0 hides it"],
+    ["LABEL_POS", "Label height", 0.97, "Height of the label's top edge from the bottom; 0.9 = 90%. 0.97 = current position"],
+    ["LABEL_TEXT", "Extra label text", "", "Shown on a line under 'n = …  error …'. Blank = none"],
+    ["CIRCLE_ALPHA", "Circle visibility", 1, "0 = hidden, 1 = normal, 2 = twice as strong"],
+    ["ARM_ALPHA", "Line visibility", 1, "Lines joining the circle centers. 0 = hidden, 1 = normal, 1.6 = solid"],
   ]],
   timing: ["Timing", [
     ["N_LIST", "Circles per stage", "1 2 3 4 5 7 10 15 20 25 30 40 50", "One stage per value. More circles = sharper shape; up to about 100"],
@@ -601,13 +605,13 @@ class Drawing {
         ctx.lineWidth = 1.3 * px;
         for (let j = 0; j < m; j++) {
           const cj = C.c[j];
-          ctx.globalAlpha = (0.06 + 0.4 * Math.sqrt(cj.r / r0)) * fade;
+          ctx.globalAlpha = Math.min(1, (0.06 + 0.4 * Math.sqrt(cj.r / r0)) * fade * S.CIRCLE_ALPHA);
           ctx.beginPath(); ctx.arc(X(x), Y(y), cj.r * H, 0, 2 * Math.PI); ctx.stroke();
           const a = 2 * Math.PI * cj.f * t, ca = Math.cos(a), sa = Math.sin(a);
           x += cj.re * ca - cj.im * sa; y += cj.re * sa + cj.im * ca;
           ax.push(X(x)); ay.push(Y(y));
         }
-        ctx.globalAlpha = 0.6 * fade; ctx.lineWidth = 1.5 * px;
+        ctx.globalAlpha = Math.min(1, 0.6 * fade * S.ARM_ALPHA); ctx.lineWidth = 1.5 * px;
         ctx.beginPath(); ctx.moveTo(ax[0], ay[0]);
         for (let k = 1; k < ax.length; k++) ctx.lineTo(ax[k], ay[k]);
         ctx.stroke();
@@ -616,7 +620,9 @@ class Drawing {
     if (S.LABEL > 0) {
       ctx.globalAlpha = 0.85; ctx.fillStyle = "#fff";
       ctx.font = `${S.LABEL * px}px monospace`; ctx.textAlign = "center"; ctx.textBaseline = "top";
-      ctx.fillText(`n = ${String(n).padEnd(3)}  error ${this.err[s].toFixed(1).padStart(4)}%`, W / 2, H * 0.03);
+      const ly = H * (1 - S.LABEL_POS);
+      ctx.fillText(`n = ${String(n).padEnd(3)}  error ${this.err[s].toFixed(1).padStart(4)}%`, W / 2, ly);
+      if (S.LABEL_TEXT) ctx.fillText(S.LABEL_TEXT, W / 2, ly + 1.3 * S.LABEL * px);
     }
     ctx.globalAlpha = 1;
   }
@@ -894,4 +900,4 @@ async function saveShots() {
 }
 </script>
 </body>
-  </html>
+</html>
