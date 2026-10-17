@@ -148,7 +148,7 @@ const GROUPS = {
   ]],
   timing: ["Timing", [
     ["N_LIST", "Circles per stage", "1 2 3 4 5 7 10 15 20 25 30 40 50", "One stage per value. More circles = sharper shape; up to about 100"],
-    ["STAGE_SEC", "Seconds per stage", 4, "Drawing time of each stage; 2–6"],
+    ["STAGE_SEC", "Seconds per stage", 4, "Drawing time T of a stage with 1 circle. A stage with n circles takes T × (1 + log10 n) seconds; 2–6"],
     ["HOLD_SEC", "Pause after stage", 0.5, "Seconds to show each finished shape; 0–1"],
     ["END_SEC", "Final hold", 3, "Seconds on the finished drawing; 2–5"],
     ["FADE_SEC", "Circle fade-out", 1, "Seconds the circles take to fade at the end; 0.5–2"],
@@ -535,16 +535,21 @@ class Drawing {
   constructor(S, items) {
     this.S = S; this.N = S.N_LIST;
     const fps = S.FPS, L = this.N.length, nMax = Math.max(...this.N);
-    this.drawFrames = Math.max(2, Math.round(S.STAGE_SEC * fps));
-    this.stageFrames = this.drawFrames + Math.round(S.HOLD_SEC * fps);
-    this.stagesEnd = L * this.stageFrames;
+    // Drawing time of a stage with n circles: STAGE_SEC * (1 + log10 n).
+    this.drawFrames = this.N.map(n =>
+      Math.max(2, Math.round(S.STAGE_SEC * (1 + Math.log10(Math.max(1, n))) * fps)));
+    const hold = Math.round(S.HOLD_SEC * fps);
+    this.stageFrames = this.drawFrames.map(d => d + hold);
+    this.starts = [0];                                      // first frame of each stage
+    for (const sf of this.stageFrames) this.starts.push(this.starts.at(-1) + sf);
+    this.stagesEnd = this.starts[L];
     this.total = this.stagesEnd + Math.round(S.END_SEC * fps);
     this.fadeFrames = Math.max(1, Math.round(Math.min(S.FADE_SEC, S.END_SEC) * fps));
-    this.T = (this.drawFrames - 1) * S.SUB + 1;            // time points; last one closes the shape
+    this.Ts = this.drawFrames.map(d => (d - 1) * S.SUB + 1); // time points per stage; last one closes the shape
     const omitted = new Float64Array(L); let total = 0;
     this.contours = [];
     for (const it of items) {
-      const colors = colorTable(it.style, this.drawFrames - 1);
+      const colors = this.drawFrames.map(d => colorTable(it.style, d - 1));
       for (const ring of it.rings) {
         const [re, im] = sampleOutline(ring, S.N_SAMPLES);
         const { dc, terms } = fourier(re, im);
@@ -553,10 +558,11 @@ class Drawing {
         total += suffix[0];
         this.N.forEach((n, s) => { omitted[s] += suffix[Math.min(n, terms.length)]; });
         const c = terms.slice(0, nMax);
-        const paths = this.N.map(n => {
-          const xs = new Float32Array(this.T), ys = new Float32Array(this.T), m = Math.min(n, c.length);
-          for (let i = 0; i < this.T; i++) {
-            const t = i / (this.T - 1); let x = dc[0], y = dc[1];
+        const paths = this.N.map((n, s) => {
+          const T = this.Ts[s];
+          const xs = new Float32Array(T), ys = new Float32Array(T), m = Math.min(n, c.length);
+          for (let i = 0; i < T; i++) {
+            const t = i / (T - 1); let x = dc[0], y = dc[1];
             for (let j = 0; j < m; j++) {
               const a = 2 * Math.PI * c[j].f * t, ca = Math.cos(a), sa = Math.sin(a);
               x += c[j].re * ca - c[j].im * sa; y += c[j].re * sa + c[j].im * ca;
@@ -574,10 +580,13 @@ class Drawing {
 
   state(f) {   // stage, time index, circle opacity, ghost on/off
     if (f < this.stagesEnd) {
-      const s = Math.floor(f / this.stageFrames), j = f % this.stageFrames;
-      return [s, Math.min(j, this.drawFrames - 1) * this.S.SUB, 1, s > 0];
+      let s = 0;
+      while (f >= this.starts[s + 1]) s++;
+      const j = f - this.starts[s];
+      return [s, Math.min(j, this.drawFrames[s] - 1) * this.S.SUB, 1, s > 0];
     }
-    return [this.N.length - 1, this.T - 1, Math.max(0, 1 - (f - this.stagesEnd) / this.fadeFrames), false];
+    const last = this.N.length - 1;
+    return [last, this.Ts[last] - 1, Math.max(0, 1 - (f - this.stagesEnd) / this.fadeFrames), false];
   }
 
   draw(ctx, f, W, H) {
@@ -604,7 +613,7 @@ class Drawing {
         ctx.lineWidth = C.lw * px * widen;
         for (let q = 0, a = 0; a < i; q++, a += SUB) {
           const b = Math.min(i, a + SUB);
-          ctx.strokeStyle = C.colors[q];
+          ctx.strokeStyle = C.colors[s][q];
           ctx.beginPath(); ctx.moveTo(X(xs[a]), Y(ys[a]));
           for (let k = a + 1; k <= b; k++) ctx.lineTo(X(xs[k]), Y(ys[k]));
           ctx.stroke();
@@ -612,7 +621,7 @@ class Drawing {
       }
     }
     if (fade > 0) {                                // circles and arm
-      const t = i / (this.T - 1);
+      const t = i / (this.Ts[s] - 1);
       ctx.strokeStyle = "#fff"; ctx.lineCap = "round";
       for (const C of this.contours) {
         let x = C.dc[0], y = C.dc[1];
@@ -644,7 +653,7 @@ class Drawing {
 
   snapFrames() {   // [label, frame]: first, 1/3, 2/3 and last stage, plus the final frame
     const L = this.N.length, stages = [...new Set([0, Math.floor(L / 3), Math.floor(2 * L / 3), L - 1])];
-    return [...stages.map(s => [`n${String(this.N[s]).padStart(3, "0")}`, (s + 1) * this.stageFrames - 1]),
+    return [...stages.map(s => [`n${String(this.N[s]).padStart(3, "0")}`, this.starts[s + 1] - 1]),
             ["final", this.total - 1]];
   }
 }
