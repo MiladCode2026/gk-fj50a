@@ -71,7 +71,7 @@
 <section id="images" class="screen">
   <div class="body">
     <h1>Your images</h1>
-    <p class="hint">Row: 1 = top. Size: shape height as a fraction of the video height; 0.15–0.35 for a vertical video. Color: blank = use the Colors setting.</p>
+    <p class="hint">Row: 1 = top. Size: shape height compared with the other images and the gaps; the whole drawing is then scaled to the Drawing width setting. Color: blank = use the Colors setting.</p>
     <button style="width:100%;margin-top:8px" onclick="document.getElementById('files').click()">+ Add images</button>
     <input id="files" type="file" accept="image/*" multiple hidden>
     <div id="imageList"></div>
@@ -83,7 +83,7 @@
 <section id="settings" class="screen">
   <div class="body">
     <h1>Settings</h1>
-    <p class="hint">Sizes are fractions of the video height. Settings are remembered.</p>
+    <p class="hint">Settings are remembered.</p>
     <div id="settingsList"></div>
     <button style="margin-top:22px" onclick="resetSettings()">Reset to defaults</button>
   </div>
@@ -126,7 +126,7 @@
 
 <script>
 // ======================= Settings =======================
-// [key, label, default, gray hint]. Sizes are fractions of the video height.
+// [key, label, default, gray hint].
 const GROUPS = {
   video: ["Video", [
     ["WIDTH", "Width (px)", 1080, "Vertical phone 1080; landscape 1920. Even number"],
@@ -139,11 +139,14 @@ const GROUPS = {
     ["COLORS", "Colors", "hsv", "Colormap or color. Several values (separated by spaces) repeat over letters or images. Maps: hsv, pastel, rainbow, cool, spring, summer, autumn, winter. hsv and pastel end on their start color"],
     ["LINE_WIDTHS", "Line width", "5", "Trace width in pixels for a 1080-pixel video; 3–8. Several values repeat"],
     ["GLOW", "Glow", 1, "0 = none, 1 = normal, 2 = strong"],
-    ["FIT", "Fit to frame", 0.9, "Shrinks the drawing if it is wider or taller than this fraction of the frame; 0 = off. Font and image sizes become maximums"],
+    ["DRAW_WIDTH", "Drawing width", 0.8, "Width of the drawing as a fraction of the frame width. 1 = touches both sides; 0.5 = 25% space on each side. A drawing too tall for the frame is shrunk to the same fraction of the height"],
     ["COMPONENTS", "Components (m)", 0, "Number of separate paths. The closest outlines are joined at their closest points until m paths remain. 1 = one path for everything; 0 = every outline separate. A joined path takes the color and line width of its first letter or image, and needs more circles"],
-    ["LABEL", "Label size", 40, "Size of the 'n = …' text in pixels for a 1080-pixel video; 0 hides it"],
-    ["LABEL_POS", "Label height", 0.97, "Height of the label's top edge from the bottom; 0.9 = 90%. 0.97 = current position"],
-    ["LABEL_TEXT", "Extra label text", "", "Shown on a line under 'n = …  error …'. Blank = none"],
+    ["LABEL", "Label size", 40, "Size of the 'n = …  ,  error = …' text in pixels for a 1080-pixel video; 0 hides it"],
+    ["LABEL_POS", "Label height", 0.97, "Height of the label's top edge from the bottom; 0.9 = 90%"],
+    ["LABEL_TEXT", "Extra text", "", "Shown under the label. Blank = none"],
+    ["EXTRA_SIZE", "Extra text size", 40, "In pixels for a 1080-pixel video; 0 hides it"],
+    ["EXTRA_COLOR", "Extra text color", "#ffffff", "Any color, such as #ffffff, gold or #7fdbff"],
+    ["EXTRA_GAP", "Extra text gap", 1, "Empty space between the label and the extra text, in label heights; 0–2"],
     ["CIRCLE_ALPHA", "Circle visibility", 1, "0 = hidden, 1 = normal, 2 = twice as strong"],
     ["ARM_ALPHA", "Line visibility", 1, "Lines joining the circle centers. 0 = hidden, 1 = normal, 1.6 = solid"],
   ]],
@@ -156,16 +159,15 @@ const GROUPS = {
   ]],
   text: ["Text", [
     ["FONT", "Font", "sans-serif", "A font on your phone: sans-serif, serif, monospace, Roboto"],
-    ["FONT_SIZE", "Font size", 0.2, "Height of a capital letter; 0.1–0.3 for a vertical video. Shrinks automatically if rows are too long (see Fit to frame)"],
-    ["WEIGHT_REL", "Font weight", 0.1, "Extra stroke thickness as a fraction of the font size; 0–0.25. Larger = more space inside"],
-    ["CORNER_REL", "Corner smoothing", 0.03, "Corner rounding as a fraction of the font size; 0–0.05. Too large erases thin parts"],
-    ["LETTER_REL", "Letter gap", 0.15, "Space between letters as a fraction of the font size; 0.1–0.25. Each space adds one more"],
-    ["LINE_REL", "Line gap", 0.2, "Space between lines as a fraction of the font size; 0.1–0.4"],
+    ["WEIGHT_REL", "Font weight", 0.1, "Extra stroke thickness as a fraction of the capital-letter height; 0–0.25. Larger = more space inside"],
+    ["CORNER_REL", "Corner smoothing", 0.03, "Corner rounding as a fraction of the capital-letter height; 0–0.05. Too large erases thin parts"],
+    ["LETTER_REL", "Letter gap", 0.15, "Space between letters as a fraction of the capital-letter height; 0.1–0.25. Each space adds one more"],
+    ["LINE_REL", "Line gap", 0.2, "Space between lines as a fraction of the capital-letter height; 0.1–0.4"],
   ]],
   image: ["Images", [
-    ["IMAGE_SIZE", "Default image size", 0.25, "Size given to newly added images; 0.15–0.35"],
-    ["IMAGE_GAP", "Image gap", 0.03, "Space between shapes in a row; 0.02–0.06"],
-    ["ROW_GAP", "Row gap", 0.04, "Space between rows; 0.02–0.08"],
+    ["IMAGE_SIZE", "Default image size", 0.25, "Size given to newly added images. Only the ratios between sizes and gaps matter"],
+    ["IMAGE_GAP", "Image gap", 0.03, "Space between shapes in a row, in the same units as image size; 0.02–0.06"],
+    ["ROW_GAP", "Row gap", 0.04, "Space between rows, in the same units as image size; 0.02–0.08"],
     ["EDGE_BLUR", "Edge blur (px)", 2, "Smooths jagged pixel edges; 0–4"],
     ["MIN_PART", "Ignore small parts", 0.05, "Drop outlines shorter than this fraction of the longest; 0.02–0.2"],
     ["KEEP_HOLES", "Trace holes", true, "Off = trace only the outer border"],
@@ -232,6 +234,8 @@ function readSettings(groups) {
     S[key] = String(raw).trim();
   }
   if (!validColor(S.BG) || S.BG in COLORMAPS) throw new Error(`Background: '${S.BG}' is not a color.`);
+  if (!CSS.supports("color", S.EXTRA_COLOR)) throw new Error(`Extra text color: '${S.EXTRA_COLOR}' is not a color.`);
+  if (S.DRAW_WIDTH <= 0) throw new Error("Drawing width must be above 0.");
   if (S.WIDTH % 2 || S.HEIGHT % 2 || Math.min(S.WIDTH, S.HEIGHT) < 64) throw new Error("Width and height must be even numbers of at least 64.");
   if (S.FPS < 1 || S.STAGE_SEC <= 0 || S.SUB < 1) throw new Error("Frames per second, seconds per stage and trace points must be above 0.");
   if (S.N_SAMPLES <= 2 * Math.max(...S.N_LIST)) throw new Error("Outline samples must be more than twice the largest circle count.");
@@ -361,19 +365,19 @@ function renderMask(ch, fontCss, P, weightPx, extra) {
   return { mask, w: cv.width, h: cv.height, base };
 }
 
-function textItems(text, S) {
+function textItems(text, S) {   // letters with capital height 1; buildItems scales the drawing to the frame
   const P = 300, f = S.FONT, fam = /\s/.test(f) && !/["',]/.test(f) ? `"${f}"` : f, fontCss = `bold ${P}px ${fam}`;
   const H = renderMask("H", fontCss, P, 0, 0);
   let top = -1, bottom = -1;
   for (let y = 0; y < H.h; y++) for (let x = 0; x < H.w; x++) if (H.mask[y * H.w + x]) { if (top < 0) top = y; bottom = y; break; }
   if (top < 0) throw new Error("This font cannot be drawn.");
-  // Weight and smoothing are fractions of the capital height, so the letter shape does not depend on the font size.
-  const cap = bottom - top + 1, k = S.FONT_SIZE / cap, weightPx = S.WEIGHT_REL * cap, smoothPx = S.CORNER_REL * cap;
+  // Weight and smoothing are fractions of the capital height.
+  const cap = bottom - top + 1, k = 1 / cap, weightPx = S.WEIGHT_REL * cap, smoothPx = S.CORNER_REL * cap;
   const cache = new Map(), items = [], notes = [];
   let n = 0;
   text.split("\n").forEach((line, ri) => {
     for (const ch of line) {
-      if (/\s/.test(ch)) { items.push({ rings: [], w: 0, h: S.FONT_SIZE, row: ri + 1 }); continue; }
+      if (/\s/.test(ch)) { items.push({ rings: [], w: 0, h: 1, row: ri + 1 }); continue; }
       if (!cache.has(ch)) {
         const g = renderMask(ch, fontCss, P, weightPx, smoothPx);
         const m = smoothPx > 0.5 ? morph(g.mask, g.w, g.h, smoothPx) : g.mask;
@@ -387,7 +391,7 @@ function textItems(text, S) {
       const g = cache.get(ch);
       if (!g) continue;
       items.push({ rings: g.rings.map(r => r.map(([x, y]) => [x - g.minX, y])), w: g.maxX - g.minX,
-                   h: S.FONT_SIZE, row: ri + 1, style: cycle(S.COLORS, n), lw: cycle(S.LINE_WIDTHS, n) });
+                   h: 1, row: ri + 1, style: cycle(S.COLORS, n), lw: cycle(S.LINE_WIDTHS, n) });
       n++;
     }
   });
@@ -533,23 +537,19 @@ function joinOutlines(items, m) {   // join the closest outlines until m paths r
 
 function buildItems(mode, S, data) {
   const { items, notes } = mode === "text" ? textItems(data, S) : imageItems(data, S);
-  let placed = mode === "text"
-    ? layout(items, S.LETTER_REL * S.FONT_SIZE, S.LINE_REL * S.FONT_SIZE)
-    : layout(items, S.IMAGE_GAP, S.ROW_GAP);
+  let placed = mode === "text" ? layout(items, S.LETTER_REL, S.LINE_REL) : layout(items, S.IMAGE_GAP, S.ROW_GAP);
   if (!placed.length) throw new Error("There is nothing to draw.");
-  const halfW = S.WIDTH / S.HEIGHT / 2;
-  let ex = 0, ey = 0;                              // half-width and half-height of the drawing
-  for (const it of placed) for (const r of it.rings) for (const [x, y] of r) { ex = Math.max(ex, Math.abs(x)); ey = Math.max(ey, Math.abs(y)); }
-  if (S.FIT > 0) {                                 // shrink everything to fit the frame
-    const s = Math.min(1, S.FIT * halfW / ex, S.FIT * 0.5 / ey);
-    if (s < 1) {
-      for (const it of placed) it.rings = it.rings.map(r => r.map(([x, y]) => [x * s, y * s]));
-      ex *= s; ey *= s;
-      notes.push(mode === "text" ? `Font size reduced to ${(S.FONT_SIZE * s).toFixed(3)} to fit the frame.`
-                                 : `Images shrunk to ${Math.round(100 * s)}% to fit the frame.`);
-    }
+  // Center the drawing, then scale it so its width is DRAW_WIDTH of the frame width.
+  // Coordinates are in units of the video height.
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const it of placed) for (const r of it.rings) for (const [x, y] of r) {
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
   }
-  if (ex > halfW || ey > 0.5) notes.push("Warning: the drawing is larger than the frame. Lower the sizes or gaps.");
+  const aspect = S.WIDTH / S.HEIGHT, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const sw = S.DRAW_WIDTH * aspect / (x1 - x0), sh = S.DRAW_WIDTH / (y1 - y0), s = Math.min(sw, sh);
+  for (const it of placed) it.rings = it.rings.map(r => r.map(([x, y]) => [(x - cx) * s, (y - cy) * s]));
+  if (sh < sw) notes.push(`The drawing is too tall for this width. It fills ${Math.round(100 * S.DRAW_WIDTH)}% of the frame height and ${Math.round(100 * s * (x1 - x0) / aspect)}% of its width.`);
+  if (S.DRAW_WIDTH > 1) notes.push("Warning: Drawing width is above 1, so the drawing is larger than the frame.");
   const count = placed.reduce((a, it) => a + it.rings.length, 0);
   if (S.COMPONENTS > 0 && count > S.COMPONENTS) {
     placed = joinOutlines(placed, S.COMPONENTS);
@@ -708,12 +708,15 @@ class Drawing {
         ctx.stroke();
       }
     }
+    const ly = H * (1 - S.LABEL_POS);              // top edge of the label
+    ctx.globalAlpha = 0.85; ctx.textAlign = "center"; ctx.textBaseline = "top";
     if (S.LABEL > 0) {
-      ctx.globalAlpha = 0.85; ctx.fillStyle = "#fff";
-      ctx.font = `${S.LABEL * px}px monospace`; ctx.textAlign = "center"; ctx.textBaseline = "top";
-      const ly = H * (1 - S.LABEL_POS);
-      ctx.fillText(`n = ${String(n).padEnd(3)}  error ${this.err[s].toFixed(1).padStart(4)}%`, W / 2, ly);
-      if (S.LABEL_TEXT) ctx.fillText(S.LABEL_TEXT, W / 2, ly + 1.3 * S.LABEL * px);
+      ctx.fillStyle = "#fff"; ctx.font = `${S.LABEL * px}px monospace`;
+      ctx.fillText(`n = ${n}   ,   error = ${this.err[s].toFixed(1)}%`, W / 2, ly);
+    }
+    if (S.LABEL_TEXT && S.EXTRA_SIZE > 0) {       // extra text under the label
+      ctx.fillStyle = S.EXTRA_COLOR; ctx.font = `${S.EXTRA_SIZE * px}px monospace`;
+      ctx.fillText(S.LABEL_TEXT, W / 2, S.LABEL > 0 ? ly + (1 + S.EXTRA_GAP) * S.LABEL * px : ly);
     }
     ctx.globalAlpha = 1;
   }
