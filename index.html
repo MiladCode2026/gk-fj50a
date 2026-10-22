@@ -637,12 +637,12 @@ function fourier(re, im) {   // center term plus all epicycles, largest first
   return { dc, terms };
 }
 
-// Same outline, same direction for every path: the largest circle turns counterclockwise
+// Same outline, same direction for every path: the largest circle turns clockwise
 // and its arm starts at angle deg. Flipping every frequency traces the outline in reverse;
 // a time shift tau turns each circle by 2π f tau. Neither changes the shape.
 function alignTerms(terms, deg) {
   if (!terms.length) return;
-  if (terms[0].f < 0) for (const tm of terms) tm.f = -tm.f;
+  if (terms[0].f > 0) for (const tm of terms) tm.f = -tm.f;
   const t0 = terms[0], tau = (deg * Math.PI / 180 - Math.atan2(t0.im, t0.re)) / (2 * Math.PI * t0.f);
   for (const tm of terms) {
     const a = 2 * Math.PI * tm.f * tau, ca = Math.cos(a), sa = Math.sin(a), re = tm.re;
