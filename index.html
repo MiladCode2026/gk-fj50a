@@ -178,6 +178,7 @@ const GROUPS = {
   ]],
   image: ["Images", [
     ["IMAGE_SIZE", "Default image size", 0.25, "Size given to newly added images. Only the ratios between sizes and gaps matter"],
+    ["IMG_POS", "Image height", 0.5, "Height of the images' center from the bottom; 0.5 = middle of the frame"],
     ["IMAGE_GAP", "Image gap", 0.03, "Space between shapes in a row, in the same units as image size; 0.02–0.06"],
     ["ROW_GAP", "Row gap", 0.04, "Space between rows, in the same units as image size; 0.02–0.08"],
     ["EDGE_BLUR", "Edge blur (px)", 2, "Smooths jagged pixel edges; 0–4"],
@@ -575,20 +576,29 @@ function buildPart(kind, S, data, frac, m, prefix, widthName) {
 }
 
 function buildItems(mode, S, data) {
-  if (mode !== "both") {
-    const p = buildPart(mode, S, data, S.DRAW_WIDTH, S.COMPONENTS, "", "Drawing width");
+  const shift = (rings, dy) => rings.map(r => r.map(([x, y]) => [x, y + dy]));
+  if (mode === "text") {
+    const p = buildPart("text", S, data, S.DRAW_WIDTH, S.COMPONENTS, "", "Drawing width");
     p.items.forEach(it => { it.glow = S.GLOW; });
     return p;
   }
-  const img = buildPart("images", S, data.images, S.DRAW_WIDTH, S.COMPONENTS, "Images: ", "Drawing width");
+  const both = mode === "both";
+  const img = buildPart("images", S, both ? data.images : data, S.DRAW_WIDTH, S.COMPONENTS,
+                        both ? "Images: " : "", "Drawing width");
+  // Move the images so their center sits at IMG_POS of the frame height from the bottom.
+  const iy = S.IMG_POS - 0.5, imgBottom = iy - img.height / 2;
+  img.items.forEach(it => { it.rings = shift(it.rings, iy); it.glow = S.GLOW; });
+  const notes = [...img.notes];
+  if (iy + img.height / 2 > 0.5 || imgBottom < -0.5) notes.push("The images run off the frame. Change Image height or lower Drawing width.");
+  if (!both) return { items: img.items, notes };
+
   const LS = { ...S, COLORS: S.LT_COLORS, LINE_WIDTHS: S.LT_LINE_WIDTHS };
   const lab = buildPart("text", LS, data.text, S.LT_WIDTH, S.LT_COMPONENTS, "Label: ", "Label width");
   // Move the label so its top edge sits at LT_POS of the frame height from the bottom.
   const top = S.LT_POS - 0.5, dy = top - lab.height / 2;
-  lab.items.forEach(it => { it.rings = it.rings.map(r => r.map(([x, y]) => [x, y + dy])); it.glow = S.LT_GLOW; });
-  img.items.forEach(it => { it.glow = S.GLOW; });
-  const notes = [...img.notes, ...lab.notes];
-  if (top > -img.height / 2) notes.push("The label overlaps the images. Lower Label height or Drawing width.");
+  lab.items.forEach(it => { it.rings = shift(it.rings, dy); it.glow = S.LT_GLOW; });
+  notes.push(...lab.notes);
+  if (top > imgBottom) notes.push("The label overlaps the images. Lower Label height, raise Image height or lower Drawing width.");
   if (top - lab.height < -0.5 || top > 0.5) notes.push("The label runs off the frame. Change Label height or lower Label width.");
   return { items: [...img.items, ...lab.items], notes };
 }
@@ -655,6 +665,9 @@ class Drawing {
       for (const ring of it.rings) {
         const [re, im] = sampleOutline(ring, ns);
         const { dc, terms } = fourier(re, im);
+        // Make the largest circle turn counterclockwise. Flipping every frequency
+        // traces the same outline in reverse, so the shape does not change.
+        if (terms.length && terms[0].f < 0) for (const tm of terms) tm.f = -tm.f;
         const suffix = new Float64Array(terms.length + 1);
         for (let j = terms.length - 1; j >= 0; j--) suffix[j] = suffix[j + 1] + terms[j].r ** 2;
         total += suffix[0];
