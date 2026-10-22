@@ -23,6 +23,7 @@
   .hint { color: var(--hint); font-size: 13px; line-height: 1.35; margin: 3px 0; white-space: pre-line; }
   button { background: var(--btn); color: var(--fg); border: 0; border-radius: 10px;
            padding: 12px 13px; font-size: 15px; }
+  button:disabled { opacity: 0.4; }
   button.accent { background: var(--accent); color: #05102a; font-weight: 700; }
   button.big { width: 100%; padding: 22px; font-size: 19px; font-weight: 700; margin-top: 22px; }
   input, textarea { background: var(--field); color: var(--fg); border: 1px solid #2b3a7a;
@@ -91,7 +92,7 @@
   </div>
   <div class="bar"><button onclick="history.back()">Back</button><span class="grow"></span>
     <button onclick="toPreview()">Preview</button>
-    <button class="accent" onclick="toExport()">Make video</button></div>
+    <button class="accent" onclick="toConfirm()">Make video</button></div>
 </section>
 
 <section id="preview" class="screen">
@@ -104,7 +105,18 @@
   </div>
   <div class="bar"><button onclick="history.back()">Back</button>
     <button id="playBtn" onclick="togglePlay()">Pause</button><span class="grow"></span>
-    <button class="accent" onclick="toExport()">Make video</button></div>
+    <button class="accent" onclick="toConfirm()">Make video</button></div>
+</section>
+
+<section id="confirm" class="screen">
+  <div class="body">
+    <h1>Check</h1>
+    <p class="hint" id="confirmNote"></p>
+    <canvas id="confirmView" class="view"></canvas>
+    <p class="hint" id="confirmNotes"></p>
+  </div>
+  <div class="bar"><button onclick="history.back()">Back</button><span class="grow"></span>
+    <button id="approveBtn" class="accent" onclick="approve()" disabled>Make video</button></div>
 </section>
 
 <section id="export" class="screen">
@@ -147,7 +159,7 @@ const GROUPS = {
     ["LABEL_POS", "Counter height", 0.97, "Height of the counter's top edge from the bottom; 0.9 = 90%"],
     ["CIRCLE_ALPHA", "Circle visibility", 1, "0 = hidden, 1 = normal, 2 = twice as strong"],
     ["ARM_ALPHA", "Line visibility", 1, "Lines joining the circle centers. 0 = hidden, 1 = normal, 1.6 = solid"],
-    ["START_ANGLE", "Start angle", 90, "Direction of every path's largest circle at the start, in degrees counterclockwise from right; 0 = right, 90 = up, 180 = left, 270 = down"],
+    ["START_ANGLE", "Start angle", 90, "Direction of every path's largest circle at the start, in degrees counterclockwise from right; 0 = right, 90 = up, 180 = left, 270 = down. The largest circle always turns clockwise"],
   ]],
   extra: ["Extra text", [
     ["LABEL_TEXT", "Extra text", "", "Shown under the counter. Blank = none"],
@@ -807,6 +819,7 @@ function show(id) {
   if (id === "settings") renderSettings();
   if (id === "images") renderImages();
   if (id === "preview") startPreview();
+  if (id === "confirm") startConfirm();
 }
 function go(id) { history.pushState({ screen: id }, ""); show(id); }
 window.addEventListener("popstate", e => show(e.state?.screen || "home"));
@@ -921,6 +934,8 @@ function fitCanvas(cv, W, H, maxHFrac) {
   cv.width = Math.round(W * s * dpr); cv.height = Math.round(H * s * dpr);
 }
 
+function fmtTime(sec) { sec = Math.round(sec); return sec >= 60 ? `${Math.floor(sec / 60)} min ${sec % 60} s` : `${sec} s`; }
+
 // ======================= Preview =======================
 let preview = null, playing = false, raf = 0, t0 = 0;
 
@@ -964,13 +979,41 @@ function stopPreview() { playing = false; cancelAnimationFrame(raf); $("playBtn"
 
 $("scrub").oninput = () => { if (!preview) return; stopPreview(); drawPreview(Number($("scrub").value)); };
 
+// ======================= Check =======================
+// Build the drawing once, show its last frame, and keep it for the video if approved.
+let pending = null;
+
+function toConfirm() { if (collect()) go("confirm"); }
+
+async function startConfirm() {
+  pending = null; $("approveBtn").disabled = true;
+  const got = collect(); if (!got) return history.back();
+  const [S, data] = got;
+  $("confirmNote").textContent = "Building the last frame…"; $("confirmNotes").textContent = "";
+  const cv = $("confirmView"); cv.getContext("2d").clearRect(0, 0, cv.width, cv.height);
+  await sleep(30);
+  let d, notes;
+  try {
+    const built = buildItems(state.mode, S, data);
+    d = new Drawing(S, built.items); notes = built.notes;
+  } catch (e) { alert(e.message); return history.back(); }
+  if (current !== "confirm") return;
+  fitCanvas(cv, S.WIDTH, S.HEIGHT, 0.58);
+  d.draw(cv.getContext("2d"), d.total - 1, cv.width, cv.height);
+  $("confirmNote").textContent = `This is the last frame. The video will be ${fmtTime(d.total / S.FPS)} long. Tap Make video to generate it, or Back to change it.`;
+  $("confirmNotes").textContent = notes.join("\n");
+  pending = { S, d, notes };
+  $("approveBtn").disabled = false;
+}
+
+function approve() {
+  if (!pending) return;
+  const { S, d, notes } = pending;
+  go("export"); runExport(S, d, notes);
+}
+
 // ======================= Export =======================
 let exporting = false, cancelExport = false, result = null;
-
-function toExport() {
-  const got = collect(); if (!got) return;
-  go("export"); runExport(...got);
-}
 
 async function pickConfig(S) {
   for (const codec of ["avc1.640033", "avc1.4D0033", "avc1.420033", "avc1.640028", "avc1.42001F"]) {
@@ -986,19 +1029,14 @@ function setExportButtons(done) {
   for (const id of ["shotsBtn", "shareBtn", "saveBtn"]) $(id).hidden = !(done && result);
 }
 
-function fmtTime(sec) { sec = Math.round(sec); return sec >= 60 ? `${Math.floor(sec / 60)} min ${sec % 60} s` : `${sec} s`; }
-
-async function runExport(S, data) {
+async function runExport(S, d, notes) {
   exporting = true; cancelExport = false; result = null;
-  $("exportTitle").textContent = "Making video"; $("exportStatus").textContent = "Preparing outlines…";
+  $("exportTitle").textContent = "Making video"; $("exportStatus").textContent = "Preparing…";
   $("exportBar").value = 0; $("exportInfo").textContent = ""; $("doneView").hidden = true;
   setExportButtons(false);
   let lock = null, encoder = null;
   try {
     if (!("VideoEncoder" in window)) throw new Error("This browser cannot make videos. Please use an up-to-date Chrome over https.");
-    await sleep(30);
-    const { items, notes } = buildItems(state.mode, S, data);
-    const d = new Drawing(S, items);
     let mod;
     try { mod = await import(MUXER_URL); } catch { throw new Error("Could not load the video tool. Check your internet connection."); }
     const { Muxer, ArrayBufferTarget } = mod;
