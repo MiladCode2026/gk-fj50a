@@ -49,19 +49,21 @@
   <div class="body">
     <h1>Fourier Drawing</h1>
     <p class="hint">Draw text or shapes with rotating circles, then save it as a video.</p>
-    <div style="height:10vh"></div>
+    <div style="height:6vh"></div>
     <h2>What do you want to draw?</h2>
     <button class="big" onclick="startMode('text')">Text</button>
     <p class="hint">Type words in one or more rows.</p>
     <button class="big" onclick="startMode('images')">Images</button>
     <p class="hint">Pick images with one shape each. The border is found automatically.</p>
+    <button class="big" onclick="startMode('both')">Image + text</button>
+    <p class="hint">Pick images and type a label. Both are drawn with circles.</p>
   </div>
 </section>
 
 <section id="text" class="screen">
   <div class="body">
-    <h1>Your text</h1>
-    <p class="hint">Each line becomes one row. Each space adds one more letter gap.</p>
+    <h1 id="textTitle">Your text</h1>
+    <p class="hint" id="textHint">Each line becomes one row. Each space adds one more letter gap.</p>
     <textarea id="textInput" rows="5" autocapitalize="characters">HI</textarea>
   </div>
   <div class="bar"><button onclick="history.back()">Back</button><span class="grow"></span>
@@ -77,7 +79,7 @@
     <div id="imageList"></div>
   </div>
   <div class="bar"><button onclick="history.back()">Back</button><span class="grow"></span>
-    <button class="accent" onclick="toSettings()">Next</button></div>
+    <button class="accent" onclick="imagesNext()">Next</button></div>
 </section>
 
 <section id="settings" class="screen">
@@ -136,19 +138,29 @@ const GROUPS = {
     ["BITRATE", "Bitrate (Mbit/s)", 8, "Quality and file size; 4–12"],
   ]],
   look: ["Look", [
-    ["COLORS", "Colors", "hsv", "Colormap or color. Several values (separated by spaces) repeat over letters or images. Maps: hsv, pastel, rainbow, cool, spring, summer, autumn, winter. hsv and pastel end on their start color"],
-    ["LINE_WIDTHS", "Line width", "5", "Trace width in pixels for a 1080-pixel video; 3–8. Several values repeat"],
-    ["GLOW", "Glow", 1, "0 = none, 1 = normal, 2 = strong"],
-    ["DRAW_WIDTH", "Drawing width", 0.8, "Width of the drawing as a fraction of the frame width. 1 = touches both sides; 0.5 = 25% space on each side. A drawing too tall for the frame is shrunk to the same fraction of the height"],
-    ["COMPONENTS", "Components (m)", 0, "Number of separate paths. The closest outlines are joined at their closest points until m paths remain. 1 = one path for everything; 0 = every outline separate. A joined path takes the color and line width of its first letter or image, and needs more circles"],
-    ["LABEL", "Label size", 40, "Size of the 'n = …  ,  error = …' text in pixels for a 1080-pixel video; 0 hides it"],
-    ["LABEL_POS", "Label height", 0.97, "Height of the label's top edge from the bottom; 0.9 = 90%"],
-    ["LABEL_TEXT", "Extra text", "", "Shown under the label. Blank = none"],
-    ["EXTRA_SIZE", "Extra text size", 40, "In pixels for a 1080-pixel video; 0 hides it"],
-    ["EXTRA_COLOR", "Extra text color", "#ffffff", "Any color, such as #ffffff, gold or #7fdbff"],
-    ["EXTRA_GAP", "Extra text gap", 1, "Empty space between the label and the extra text, in label heights; 0–2"],
+    ["COLORS", "Colors", "hsv", "Colormap or color. Several values (separated by spaces) repeat over letters or images. Maps: hsv, pastel, rainbow, cool, spring, summer, autumn, winter. hsv and pastel end on their start color. In Image + text mode this applies to the images"],
+    ["LINE_WIDTHS", "Line width", "5", "Trace width in pixels for a 1080-pixel video; 3–8. Several values repeat. In Image + text mode this applies to the images"],
+    ["GLOW", "Glow", 1, "0 = none, 1 = normal, 2 = strong. In Image + text mode this applies to the images"],
+    ["DRAW_WIDTH", "Drawing width", 0.8, "Width of the drawing as a fraction of the frame width. 1 = touches both sides; 0.5 = 25% space on each side. A drawing too tall for the frame is shrunk to the same fraction of the height. In Image + text mode this applies to the images"],
+    ["COMPONENTS", "Components (m)", 0, "Number of separate paths. The closest outlines are joined at their closest points until m paths remain. 1 = one path for everything; 0 = every outline separate. A joined path takes the color and line width of its first letter or image, and needs more circles. In Image + text mode this applies to the images"],
+    ["LABEL", "Counter size", 40, "Size of the 'n = …  ,  error = …' text in pixels for a 1080-pixel video; 0 hides it"],
+    ["LABEL_POS", "Counter height", 0.97, "Height of the counter's top edge from the bottom; 0.9 = 90%"],
     ["CIRCLE_ALPHA", "Circle visibility", 1, "0 = hidden, 1 = normal, 2 = twice as strong"],
     ["ARM_ALPHA", "Line visibility", 1, "Lines joining the circle centers. 0 = hidden, 1 = normal, 1.6 = solid"],
+  ]],
+  extra: ["Extra text", [
+    ["LABEL_TEXT", "Extra text", "", "Shown under the counter. Blank = none"],
+    ["EXTRA_SIZE", "Extra text size", 40, "In pixels for a 1080-pixel video; 0 hides it"],
+    ["EXTRA_COLOR", "Extra text color", "#ffffff", "Any color, such as #ffffff, gold or #7fdbff"],
+    ["EXTRA_GAP", "Extra text gap", 1, "Empty space between the counter and the extra text, in counter heights; 0–2"],
+  ]],
+  label: ["Drawn label", [
+    ["LT_WIDTH", "Label width", 0.6, "Width of the label as a fraction of the frame width. A label too tall for the frame is shrunk to the same fraction of the height"],
+    ["LT_POS", "Label height", 0.2, "Height of the label's top edge from the bottom; 0.2 = 20%"],
+    ["LT_COLORS", "Label colors", "pastel", "Colormap or color, as in Colors. Several values repeat over letters"],
+    ["LT_LINE_WIDTHS", "Label line width", "4", "Trace width in pixels for a 1080-pixel video; 3–8. Several values repeat"],
+    ["LT_GLOW", "Label glow", 1, "0 = none, 1 = normal, 2 = strong"],
+    ["LT_COMPONENTS", "Label components", 1, "Number of separate paths in the label. 1 = one path for the whole label; 0 = every outline separate. More paths look sharper with few circles"],
   ]],
   timing: ["Timing", [
     ["N_LIST", "Circles per stage", "1 2 3 4 5 7 10 15 20 25 30 40 50", "One stage per value. More circles = sharper shape; up to about 100"],
@@ -179,8 +191,9 @@ const GROUPS = {
   ]],
 };
 const ALL = Object.values(GROUPS).flatMap(g => g[1]);
-const INT_KEYS = new Set(["WIDTH", "HEIGHT", "FPS", "SUB", "N_SAMPLES", "MAX_PIXELS", "COMPONENTS"]);
-const LIST_KEYS = new Set(["COLORS", "LINE_WIDTHS", "N_LIST"]);
+const INT_KEYS = new Set(["WIDTH", "HEIGHT", "FPS", "SUB", "N_SAMPLES", "MAX_PIXELS", "COMPONENTS", "LT_COMPONENTS"]);
+const LIST_KEYS = new Set(["COLORS", "LINE_WIDTHS", "N_LIST", "LT_COLORS", "LT_LINE_WIDTHS"]);
+const COLOR_LISTS = new Set(["COLORS", "LT_COLORS"]);
 const STORE = "fourier-settings";
 const MUXER_URL = "https://cdn.jsdelivr.net/npm/mp4-muxer@5/+esm";
 
@@ -204,7 +217,9 @@ function saveSettings() { localStorage.setItem(STORE, JSON.stringify(state.setti
 const state = { mode: "text", images: [], settings: loadSettings() };
 
 function groupsFor(mode) {
-  return [GROUPS.video, GROUPS.look, GROUPS.timing, mode === "text" ? GROUPS.text : GROUPS.image, GROUPS.advanced];
+  if (mode === "text") return [GROUPS.video, GROUPS.look, GROUPS.extra, GROUPS.timing, GROUPS.text, GROUPS.advanced];
+  if (mode === "images") return [GROUPS.video, GROUPS.look, GROUPS.extra, GROUPS.timing, GROUPS.image, GROUPS.advanced];
+  return [GROUPS.video, GROUPS.look, GROUPS.label, GROUPS.timing, GROUPS.image, GROUPS.text, GROUPS.advanced];
 }
 
 function readSettings(groups) {
@@ -215,8 +230,8 @@ function readSettings(groups) {
     if (LIST_KEYS.has(key)) {
       const parts = String(raw).split(/[\s,]+/).filter(Boolean);
       if (!parts.length) bad(label, raw);
-      if (key === "COLORS") {
-        for (const c of parts) if (!validColor(c)) throw new Error(`Colors: '${c}' is not a colormap or color.`);
+      if (COLOR_LISTS.has(key)) {
+        for (const c of parts) if (!validColor(c)) throw new Error(`${label}: '${c}' is not a colormap or color.`);
         S[key] = parts;
       } else {
         const nums = parts.map(Number);
@@ -234,8 +249,9 @@ function readSettings(groups) {
     S[key] = String(raw).trim();
   }
   if (!validColor(S.BG) || S.BG in COLORMAPS) throw new Error(`Background: '${S.BG}' is not a color.`);
-  if (!CSS.supports("color", S.EXTRA_COLOR)) throw new Error(`Extra text color: '${S.EXTRA_COLOR}' is not a color.`);
+  if (S.EXTRA_COLOR !== undefined && !CSS.supports("color", S.EXTRA_COLOR)) throw new Error(`Extra text color: '${S.EXTRA_COLOR}' is not a color.`);
   if (S.DRAW_WIDTH <= 0) throw new Error("Drawing width must be above 0.");
+  if (S.LT_WIDTH !== undefined && S.LT_WIDTH <= 0) throw new Error("Label width must be above 0.");
   if (S.WIDTH % 2 || S.HEIGHT % 2 || Math.min(S.WIDTH, S.HEIGHT) < 64) throw new Error("Width and height must be even numbers of at least 64.");
   if (S.FPS < 1 || S.STAGE_SEC <= 0 || S.SUB < 1) throw new Error("Frames per second, seconds per stage and trace points must be above 0.");
   if (S.N_SAMPLES <= 2 * Math.max(...S.N_LIST)) throw new Error("Outline samples must be more than twice the largest circle count.");
@@ -365,7 +381,7 @@ function renderMask(ch, fontCss, P, weightPx, extra) {
   return { mask, w: cv.width, h: cv.height, base };
 }
 
-function textItems(text, S) {   // letters with capital height 1; buildItems scales the drawing to the frame
+function textItems(text, S) {   // letters with capital height 1; buildPart scales them to the frame
   const P = 300, f = S.FONT, fam = /\s/.test(f) && !/["',]/.test(f) ? `"${f}"` : f, fontCss = `bold ${P}px ${fam}`;
   const H = renderMask("H", fontCss, P, 0, 0);
   let top = -1, bottom = -1;
@@ -535,27 +551,46 @@ function joinOutlines(items, m) {   // join the closest outlines until m paths r
   return out;
 }
 
-function buildItems(mode, S, data) {
-  const { items, notes } = mode === "text" ? textItems(data, S) : imageItems(data, S);
-  let placed = mode === "text" ? layout(items, S.LETTER_REL, S.LINE_REL) : layout(items, S.IMAGE_GAP, S.ROW_GAP);
-  if (!placed.length) throw new Error("There is nothing to draw.");
-  // Center the drawing, then scale it so its width is DRAW_WIDTH of the frame width.
-  // Coordinates are in units of the video height.
+// Build one part (text or images): lay it out, center it, scale its width to frac of the frame
+// width, then join outlines until m paths remain. Coordinates are in units of the video height.
+function buildPart(kind, S, data, frac, m, prefix, widthName) {
+  const { items, notes } = kind === "text" ? textItems(data, S) : imageItems(data, S);
+  let placed = kind === "text" ? layout(items, S.LETTER_REL, S.LINE_REL) : layout(items, S.IMAGE_GAP, S.ROW_GAP);
+  if (!placed.length) throw new Error(`${prefix}There is nothing to draw.`);
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const it of placed) for (const r of it.rings) for (const [x, y] of r) {
     x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
   }
   const aspect = S.WIDTH / S.HEIGHT, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-  const sw = S.DRAW_WIDTH * aspect / (x1 - x0), sh = S.DRAW_WIDTH / (y1 - y0), s = Math.min(sw, sh);
+  const sw = frac * aspect / (x1 - x0), sh = frac / (y1 - y0), s = Math.min(sw, sh);
   for (const it of placed) it.rings = it.rings.map(r => r.map(([x, y]) => [(x - cx) * s, (y - cy) * s]));
-  if (sh < sw) notes.push(`The drawing is too tall for this width. It fills ${Math.round(100 * S.DRAW_WIDTH)}% of the frame height and ${Math.round(100 * s * (x1 - x0) / aspect)}% of its width.`);
-  if (S.DRAW_WIDTH > 1) notes.push("Warning: Drawing width is above 1, so the drawing is larger than the frame.");
+  if (sh < sw) notes.push(`${prefix}Too tall for this width. It fills ${Math.round(100 * frac)}% of the frame height and ${Math.round(100 * s * (x1 - x0) / aspect)}% of its width.`);
+  if (frac > 1) notes.push(`${prefix}Warning: ${widthName} is above 1, so it is larger than the frame.`);
   const count = placed.reduce((a, it) => a + it.rings.length, 0);
-  if (S.COMPONENTS > 0 && count > S.COMPONENTS) {
-    placed = joinOutlines(placed, S.COMPONENTS);
-    notes.push(`${count} outlines joined into ${placed.length} path(s). Joined paths need more circles.`);
+  if (m > 0 && count > m) {
+    placed = joinOutlines(placed, m);
+    notes.push(`${prefix}${count} outlines joined into ${placed.length} path(s). Joined paths need more circles.`);
   }
-  return { items: placed, notes };
+  return { items: placed, notes, height: s * (y1 - y0) };
+}
+
+function buildItems(mode, S, data) {
+  if (mode !== "both") {
+    const p = buildPart(mode, S, data, S.DRAW_WIDTH, S.COMPONENTS, "", "Drawing width");
+    p.items.forEach(it => { it.glow = S.GLOW; });
+    return p;
+  }
+  const img = buildPart("images", S, data.images, S.DRAW_WIDTH, S.COMPONENTS, "Images: ", "Drawing width");
+  const LS = { ...S, COLORS: S.LT_COLORS, LINE_WIDTHS: S.LT_LINE_WIDTHS };
+  const lab = buildPart("text", LS, data.text, S.LT_WIDTH, S.LT_COMPONENTS, "Label: ", "Label width");
+  // Move the label so its top edge sits at LT_POS of the frame height from the bottom.
+  const top = S.LT_POS - 0.5, dy = top - lab.height / 2;
+  lab.items.forEach(it => { it.rings = it.rings.map(r => r.map(([x, y]) => [x, y + dy])); it.glow = S.LT_GLOW; });
+  img.items.forEach(it => { it.glow = S.GLOW; });
+  const notes = [...img.notes, ...lab.notes];
+  if (top > -img.height / 2) notes.push("The label overlaps the images. Lower Label height or Drawing width.");
+  if (top - lab.height < -0.5 || top > 0.5) notes.push("The label runs off the frame. Change Label height or lower Label width.");
+  return { items: [...img.items, ...lab.items], notes };
 }
 
 // ======================= Fourier animation =======================
@@ -638,7 +673,7 @@ class Drawing {
           }
           return [xs, ys];
         });
-        this.contours.push({ dc, c, paths, colors, lw: it.lw });
+        this.contours.push({ dc, c, paths, colors, lw: it.lw, glow: it.glow ?? S.GLOW });
       }
     }
     // RMS distance from the true outlines, as % of the drawing's RMS size (Parseval).
@@ -672,21 +707,24 @@ class Drawing {
         ctx.stroke();
       }
     }
-    const layers = S.GLOW > 0 ? [[Math.min(1, 0.18 * S.GLOW), 1 + 2 * S.GLOW, "butt"], [1, 1, "round"]] : [[1, 1, "round"]];
-    for (const [alpha, widen, cap] of layers) {    // glow, then the colored trace
-      ctx.globalAlpha = alpha; ctx.lineCap = cap;
-      for (const C of this.contours) {
-        const [xs, ys] = C.paths[s];
-        ctx.lineWidth = C.lw * px * widen;
-        for (let q = 0, a = 0; a < i; q++, a += SUB) {
-          const b = Math.min(i, a + SUB);
-          ctx.strokeStyle = C.colors[s][q];
-          ctx.beginPath(); ctx.moveTo(X(xs[a]), Y(ys[a]));
-          for (let k = a + 1; k <= b; k++) ctx.lineTo(X(xs[k]), Y(ys[k]));
-          ctx.stroke();
-        }
+    const trace = (C, widen) => {
+      const [xs, ys] = C.paths[s];
+      ctx.lineWidth = C.lw * px * widen;
+      for (let q = 0, a = 0; a < i; q++, a += SUB) {
+        const b = Math.min(i, a + SUB);
+        ctx.strokeStyle = C.colors[s][q];
+        ctx.beginPath(); ctx.moveTo(X(xs[a]), Y(ys[a]));
+        for (let k = a + 1; k <= b; k++) ctx.lineTo(X(xs[k]), Y(ys[k]));
+        ctx.stroke();
       }
+    };
+    ctx.lineCap = "butt";                          // glow, set per path
+    for (const C of this.contours) if (C.glow > 0) {
+      ctx.globalAlpha = Math.min(1, 0.18 * C.glow); trace(C, 1 + 2 * C.glow);
     }
+    ctx.globalAlpha = 1; ctx.lineCap = "round";    // the colored trace
+    for (const C of this.contours) trace(C, 1);
+
     if (fade > 0) {                                // circles and arm
       const t = i / (this.Ts[s] - 1);
       ctx.strokeStyle = "#fff"; ctx.lineCap = "round";
@@ -708,13 +746,13 @@ class Drawing {
         ctx.stroke();
       }
     }
-    const ly = H * (1 - S.LABEL_POS);              // top edge of the label
+    const ly = H * (1 - S.LABEL_POS);              // top edge of the counter
     ctx.globalAlpha = 0.85; ctx.textAlign = "center"; ctx.textBaseline = "top";
     if (S.LABEL > 0) {
       ctx.fillStyle = "#fff"; ctx.font = `${S.LABEL * px}px monospace`;
       ctx.fillText(`n = ${n}   ,   error = ${this.err[s].toFixed(1)}%`, W / 2, ly);
     }
-    if (S.LABEL_TEXT && S.EXTRA_SIZE > 0) {       // extra text under the label
+    if (S.LABEL_TEXT && S.EXTRA_SIZE > 0) {       // extra text under the counter (Text and Images modes)
       ctx.fillStyle = S.EXTRA_COLOR; ctx.font = `${S.EXTRA_SIZE * px}px monospace`;
       ctx.fillText(S.LABEL_TEXT, W / 2, S.LABEL > 0 ? ly + (1 + S.EXTRA_GAP) * S.LABEL * px : ly);
     }
@@ -735,6 +773,12 @@ function show(id) {
   if (current === "export" && exporting) cancelExport = true;
   document.querySelectorAll(".screen").forEach(el => el.classList.toggle("on", el.id === id));
   current = id;
+  if (id === "text") {
+    const both = state.mode === "both";
+    $("textTitle").textContent = both ? "Your label" : "Your text";
+    $("textHint").textContent = (both ? "Drawn with circles below the images. " : "") +
+      "Each line becomes one row. Each space adds one more letter gap.";
+  }
   if (id === "settings") renderSettings();
   if (id === "images") renderImages();
   if (id === "preview") startPreview();
@@ -745,9 +789,17 @@ history.replaceState({ screen: "home" }, "");
 
 function startMode(mode) { state.mode = mode; go(mode === "text" ? "text" : "images"); }
 
+const usesText = () => state.mode === "text" || state.mode === "both";
+const usesImages = () => state.mode === "images" || state.mode === "both";
+
+function imagesNext() {
+  if (!state.images.length) return alert("Please add at least one image.");
+  if (state.mode === "both") go("text"); else toSettings();
+}
+
 function toSettings() {
-  if (state.mode === "text" && !$("textInput").value.trim()) return alert("Please type some text.");
-  if (state.mode === "images" && !state.images.length) return alert("Please add at least one image.");
+  if (usesText() && !$("textInput").value.trim()) return alert("Please type some text.");
+  if (usesImages() && !state.images.length) return alert("Please add at least one image.");
   go("settings");
 }
 
@@ -812,21 +864,28 @@ function renderImages() {
   });
 }
 
+function readText() {
+  const text = $("textInput").value.replace(/^\n+|\n+$/g, "");
+  if (!text.trim()) throw new Error("Please type some text.");
+  return text;
+}
+
+function readImages() {
+  if (!state.images.length) throw new Error("Please add at least one image.");
+  return state.images.map(im => {
+    const row = Number(im.row), size = Number(im.size), color = im.color.trim();
+    if (!Number.isInteger(row) || !(size > 0)) throw new Error(`${im.name}: row must be a whole number and size a positive number.`);
+    if (color && !validColor(color)) throw new Error(`${im.name}: '${color}' is not a colormap or color.`);
+    return { name: im.name, bitmap: im.bitmap, row, size, color };
+  });
+}
+
 function collect() {
   try {
     const S = readSettings(groupsFor(state.mode));
-    if (state.mode === "text") {
-      const text = $("textInput").value.replace(/^\n+|\n+$/g, "");
-      if (!text.trim()) throw new Error("Please type some text.");
-      return [S, text];
-    }
-    if (!state.images.length) throw new Error("Please add at least one image.");
-    return [S, state.images.map(im => {
-      const row = Number(im.row), size = Number(im.size), color = im.color.trim();
-      if (!Number.isInteger(row) || !(size > 0)) throw new Error(`${im.name}: row must be a whole number and size a positive number.`);
-      if (color && !validColor(color)) throw new Error(`${im.name}: '${color}' is not a colormap or color.`);
-      return { name: im.name, bitmap: im.bitmap, row, size, color };
-    })];
+    if (state.mode === "text") return [S, readText()];
+    if (state.mode === "images") return [S, readImages()];
+    return [S, { images: readImages(), text: readText() }];
   } catch (e) { alert(e.message); return null; }
 }
 
