@@ -147,6 +147,7 @@ const GROUPS = {
     ["LABEL_POS", "Counter height", 0.97, "Height of the counter's top edge from the bottom; 0.9 = 90%"],
     ["CIRCLE_ALPHA", "Circle visibility", 1, "0 = hidden, 1 = normal, 2 = twice as strong"],
     ["ARM_ALPHA", "Line visibility", 1, "Lines joining the circle centers. 0 = hidden, 1 = normal, 1.6 = solid"],
+    ["START_ANGLE", "Start angle", 90, "Direction of every path's largest circle at the start, in degrees counterclockwise from right; 0 = right, 90 = up, 180 = left, 270 = down"],
   ]],
   extra: ["Extra text", [
     ["LABEL_TEXT", "Extra text", "", "Shown under the counter. Blank = none"],
@@ -636,6 +637,19 @@ function fourier(re, im) {   // center term plus all epicycles, largest first
   return { dc, terms };
 }
 
+// Same outline, same direction for every path: the largest circle turns counterclockwise
+// and its arm starts at angle deg. Flipping every frequency traces the outline in reverse;
+// a time shift tau turns each circle by 2π f tau. Neither changes the shape.
+function alignTerms(terms, deg) {
+  if (!terms.length) return;
+  if (terms[0].f < 0) for (const tm of terms) tm.f = -tm.f;
+  const t0 = terms[0], tau = (deg * Math.PI / 180 - Math.atan2(t0.im, t0.re)) / (2 * Math.PI * t0.f);
+  for (const tm of terms) {
+    const a = 2 * Math.PI * tm.f * tau, ca = Math.cos(a), sa = Math.sin(a), re = tm.re;
+    tm.re = re * ca - tm.im * sa; tm.im = re * sa + tm.im * ca;
+  }
+}
+
 function colorTable(spec, count) {
   const map = COLORMAPS[spec];
   return Array.from({ length: count }, (_, q) => map ? map(q / count) : spec);
@@ -665,9 +679,7 @@ class Drawing {
       for (const ring of it.rings) {
         const [re, im] = sampleOutline(ring, ns);
         const { dc, terms } = fourier(re, im);
-        // Make the largest circle turn counterclockwise. Flipping every frequency
-        // traces the same outline in reverse, so the shape does not change.
-        if (terms.length && terms[0].f < 0) for (const tm of terms) tm.f = -tm.f;
+        alignTerms(terms, S.START_ANGLE);
         const suffix = new Float64Array(terms.length + 1);
         for (let j = terms.length - 1; j >= 0; j--) suffix[j] = suffix[j + 1] + terms[j].r ** 2;
         total += suffix[0];
