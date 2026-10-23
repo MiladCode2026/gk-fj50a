@@ -74,7 +74,7 @@
 <section id="images" class="screen">
   <div class="body">
     <h1>Your images</h1>
-    <p class="hint">X, Y: center of the image as fractions of the frame; 0 0 = bottom left, 0.5 0.5 = middle. Width: image width as a fraction of the frame width. Color: a colormap (hsv, pastel, rainbow, cool, spring, summer, autumn, winter) or a color such as gold or #7fdbff.</p>
+    <p class="hint">X, Y: center of the image as fractions of the frame; 0 0 = bottom left, 0.5 0.5 = middle. Width: image width as a fraction of the frame width. Color: a colormap (hsv, pastel, rainbow, cool, spring, summer, autumn, winter) or a color such as gold or #7fdbff. Components: number of separate paths in this image; its closest outlines are joined until that many remain. 1 = one path; 0 = every outline separate. Joined paths need more circles.</p>
     <button style="width:100%;margin-top:8px" onclick="document.getElementById('files').click()">+ Add images</button>
     <input id="files" type="file" accept="image/*" multiple hidden>
     <div id="imageList"></div>
@@ -154,7 +154,7 @@ const GROUPS = {
     ["LINE_WIDTHS", "Line width", "5", "Trace width in pixels for a 1080-pixel video; 3–8. Several values repeat. In Image + text mode this applies to the images"],
     ["GLOW", "Glow", 1, "0 = none, 1 = normal, 2 = strong. In Image + text mode this applies to the images"],
     ["DRAW_WIDTH", "Drawing width", 0.8, "Width of the drawing as a fraction of the frame width. 1 = touches both sides; 0.5 = 25% space on each side. A drawing too tall for the frame is shrunk to the same fraction of the height"],
-    ["COMPONENTS", "Components (m)", 0, "Number of separate paths. The closest outlines are joined at their closest points until m paths remain. 1 = one path for everything; 0 = every outline separate. A joined path takes the color and line width of its first letter or image, and needs more circles. In Image + text mode this applies to the images"],
+    ["COMPONENTS", "Components (m)", 0, "Number of separate paths. The closest outlines are joined at their closest points until m paths remain. 1 = one path for everything; 0 = every outline separate. A joined path takes the color and line width of its first letter, and needs more circles"],
     ["LABEL", "Counter size", 40, "Size of the 'n = …  ,  error = …' text in pixels for a 1080-pixel video; 0 hides it"],
     ["LABEL_POS", "Counter height", 0.97, "Height of the counter's top edge from the bottom; 0.9 = 90%"],
     ["CIRCLE_ALPHA", "Circle visibility", 1, "0 = hidden, 1 = normal, 2 = twice as strong"],
@@ -226,7 +226,7 @@ function saveSettings() { localStorage.setItem(STORE, JSON.stringify(state.setti
 
 const state = { mode: "text", images: [], settings: loadSettings() };
 
-const TEXT_ONLY = new Set(["COLORS", "DRAW_WIDTH"]);   // images set these per image
+const TEXT_ONLY = new Set(["COLORS", "DRAW_WIDTH", "COMPONENTS"]);   // images set these per image
 function groupsFor(mode) {
   if (mode === "text") return [GROUPS.video, GROUPS.look, GROUPS.extra, GROUPS.timing, GROUPS.text, GROUPS.advanced];
   const look = [GROUPS.look[0], GROUPS.look[1].filter(([k]) => !TEXT_ONLY.has(k))];
@@ -467,7 +467,9 @@ function imageLoops(bmp, S) {
   return contours(boxBlur(F, W, H, blur), W, H, 0.5);
 }
 
-function imageItems(images, S) {   // place each image by its center (x, y) and width, as fractions of the frame
+// Place each image by its center (x, y) and width, as fractions of the frame,
+// then join that image's own outlines until its Components count remains.
+function imageItems(images, S) {
   const aspect = S.WIDTH / S.HEIGHT, items = [], notes = [], boxes = [], eps = 1e-6;
   images.forEach((im, i) => {
     let loops = imageLoops(im.bitmap, S);
@@ -476,15 +478,22 @@ function imageItems(images, S) {   // place each image by its center (x, y) and 
     loops = loops.map((l, j) => [l, per[j]]).filter(([, p]) => p >= S.MIN_PART * maxP)
                  .sort((a, b) => b[1] - a[1]).map(([l]) => l);
     if (!S.KEEP_HOLES) loops = loops.slice(0, 1);
-    notes.push(`${im.name}: ${loops.length} outline(s)`);
     loops = loops.map(l => l.map(([x, y]) => [x, -y]));            // image rows go down; flip y
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const l of loops) for (const [x, y] of l) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
     // The frame runs from -aspect/2 to aspect/2 across and -0.5 to 0.5 up, in units of the frame height.
     const s = im.width * aspect / (x1 - x0), cx = (im.x - 0.5) * aspect, cy = im.y - 0.5;
     const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, hw = im.width * aspect / 2, hh = s * (y1 - y0) / 2;
-    items.push({ rings: loops.map(l => l.map(([x, y]) => [cx + (x - mx) * s, cy + (y - my) * s])),
-                 style: im.color, lw: cycle(S.LINE_WIDTHS, i) });
+    const item = { rings: loops.map(l => l.map(([x, y]) => [cx + (x - mx) * s, cy + (y - my) * s])),
+                   style: im.color, lw: cycle(S.LINE_WIDTHS, i) };
+    if (im.comp > 0 && loops.length > im.comp) {
+      const joined = joinOutlines([item], im.comp);
+      items.push(...joined);
+      notes.push(`${im.name}: ${loops.length} outlines joined into ${joined.length} path(s). Joined paths need more circles.`);
+    } else {
+      items.push(item);
+      notes.push(`${im.name}: ${loops.length} outline(s)`);
+    }
     boxes.push([cx - hw, cx + hw, cy - hh, cy + hh]);
     if (cx - hw < -aspect / 2 - eps || cx + hw > aspect / 2 + eps || cy - hh < -0.5 - eps || cy + hh > 0.5 + eps)
       notes.push(`${im.name}: runs off the frame. Change x, y or width.`);
@@ -591,19 +600,6 @@ function buildPart(S, text, frac, m, prefix, widthName) {
   return { items: placed, notes, height: s * (y1 - y0), width: s * (x1 - x0) };
 }
 
-// Build images: imageItems places each one; then join outlines until COMPONENTS paths remain.
-function buildImages(S, images, prefix) {
-  const { items, notes, boxes } = imageItems(images, S);
-  let placed = items;
-  const count = placed.reduce((a, it) => a + it.rings.length, 0);
-  if (S.COMPONENTS > 0 && count > S.COMPONENTS) {
-    placed = joinOutlines(placed, S.COMPONENTS);
-    notes.push(`${prefix}${count} outlines joined into ${placed.length} path(s). Joined paths need more circles.`);
-  }
-  placed.forEach(it => { it.glow = S.GLOW; });
-  return { items: placed, notes, boxes };
-}
-
 function buildItems(mode, S, data) {
   if (mode === "text") {
     const p = buildPart(S, data, S.DRAW_WIDTH, S.COMPONENTS, "", "Drawing width");
@@ -611,7 +607,8 @@ function buildItems(mode, S, data) {
     return p;
   }
   const both = mode === "both";
-  const img = buildImages(S, both ? data.images : data, both ? "Images: " : "");
+  const img = imageItems(both ? data.images : data, S);
+  img.items.forEach(it => { it.glow = S.GLOW; });
   if (!both) return { items: img.items, notes: img.notes };
 
   const LS = { ...S, COLORS: S.LT_COLORS, LINE_WIDTHS: S.LT_LINE_WIDTHS };
@@ -882,7 +879,7 @@ $("files").onchange = async e => {
     try {
       const bitmap = await createImageBitmap(file);
       state.images.push({ name: file.name, bitmap, url: URL.createObjectURL(file),
-                          x: "0.5", y: state.mode === "both" ? "0.6" : "0.5", width: "0.5", color: "hsv" });
+                          x: "0.5", y: state.mode === "both" ? "0.6" : "0.5", width: "0.5", color: "hsv", comp: "0" });
     } catch { alert(`${file.name} could not be opened.`); }
   }
   e.target.value = ""; renderImages();
@@ -902,10 +899,11 @@ function renderImages() {
     card.querySelector(".grow").textContent = im.name;
     card.querySelector("button").onclick = () => { state.images.splice(i, 1); renderImages(); };
     const line = card.querySelector(".line");
-    for (const [name, key, cls] of [["X", "x", ""], ["Y", "y", ""], ["Width", "width", ""], ["Color", "color", "color"]]) {
+    for (const [name, key, cls] of [["X", "x", ""], ["Y", "y", ""], ["Width", "width", ""],
+                                    ["Color", "color", "color"], ["Components", "comp", ""]]) {
       const lab = document.createElement("span"); lab.textContent = name;
       const input = document.createElement("input"); input.type = "text"; input.value = im[key]; input.className = cls;
-      input.inputMode = key === "color" ? "text" : "decimal"; input.autocapitalize = "off";
+      input.inputMode = key === "color" ? "text" : key === "comp" ? "numeric" : "decimal"; input.autocapitalize = "off";
       input.oninput = () => { im[key] = input.value; };
       line.append(lab, input);
     }
@@ -923,10 +921,11 @@ function readImages() {
   if (!state.images.length) throw new Error("Please add at least one image.");
   const num = v => String(v).trim() === "" ? NaN : Number(v);
   return state.images.map(im => {
-    const x = num(im.x), y = num(im.y), width = num(im.width), color = im.color.trim();
+    const x = num(im.x), y = num(im.y), width = num(im.width), comp = num(im.comp), color = im.color.trim();
     if (!isFinite(x) || !isFinite(y) || !(width > 0)) throw new Error(`${im.name}: x and y must be numbers and width a positive number.`);
+    if (!Number.isInteger(comp) || comp < 0) throw new Error(`${im.name}: components must be a whole number, 0 or more.`);
     if (!validColor(color)) throw new Error(`${im.name}: '${color}' is not a colormap or color.`);
-    return { name: im.name, bitmap: im.bitmap, x, y, width, color };
+    return { name: im.name, bitmap: im.bitmap, x, y, width, color, comp };
   });
 }
 
