@@ -36,7 +36,7 @@
   .card { background: var(--card); border-radius: 10px; padding: 10px; margin: 8px 0; }
   .card .top { display: flex; align-items: center; gap: 10px; }
   .card img { height: 44px; width: 44px; object-fit: contain; background: #fff2; border-radius: 6px; }
-  .card .line { display: flex; gap: 6px; align-items: center; margin-top: 8px; font-size: 13px; color: var(--hint); }
+  .card .line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; font-size: 13px; color: var(--hint); }
   .card .line input { width: 54px; padding: 7px; }
   .card .line input.color { width: 96px; }
   canvas.view { display: block; margin: 10px auto; border-radius: 8px; }
@@ -74,7 +74,7 @@
 <section id="images" class="screen">
   <div class="body">
     <h1>Your images</h1>
-    <p class="hint">Row: 1 = top. Size: shape height compared with the other images and the gaps; the whole drawing is then scaled to the Drawing width setting. Color: blank = use the Colors setting.</p>
+    <p class="hint">X, Y: center of the image as fractions of the frame; 0 0 = bottom left, 0.5 0.5 = middle. Width: image width as a fraction of the frame width. Color: a colormap (hsv, pastel, rainbow, cool, spring, summer, autumn, winter) or a color such as gold or #7fdbff.</p>
     <button style="width:100%;margin-top:8px" onclick="document.getElementById('files').click()">+ Add images</button>
     <input id="files" type="file" accept="image/*" multiple hidden>
     <div id="imageList"></div>
@@ -150,10 +150,10 @@ const GROUPS = {
     ["BITRATE", "Bitrate (Mbit/s)", 8, "Quality and file size; 4–12"],
   ]],
   look: ["Look", [
-    ["COLORS", "Colors", "hsv", "Colormap or color. Several values (separated by spaces) repeat over letters or images. Maps: hsv, pastel, rainbow, cool, spring, summer, autumn, winter. hsv and pastel end on their start color. In Image + text mode this applies to the images"],
+    ["COLORS", "Colors", "hsv", "Colormap or color. Several values (separated by spaces) repeat over letters. Maps: hsv, pastel, rainbow, cool, spring, summer, autumn, winter. hsv and pastel end on their start color"],
     ["LINE_WIDTHS", "Line width", "5", "Trace width in pixels for a 1080-pixel video; 3–8. Several values repeat. In Image + text mode this applies to the images"],
     ["GLOW", "Glow", 1, "0 = none, 1 = normal, 2 = strong. In Image + text mode this applies to the images"],
-    ["DRAW_WIDTH", "Drawing width", 0.8, "Width of the drawing as a fraction of the frame width. 1 = touches both sides; 0.5 = 25% space on each side. A drawing too tall for the frame is shrunk to the same fraction of the height. In Image + text mode this applies to the images"],
+    ["DRAW_WIDTH", "Drawing width", 0.8, "Width of the drawing as a fraction of the frame width. 1 = touches both sides; 0.5 = 25% space on each side. A drawing too tall for the frame is shrunk to the same fraction of the height"],
     ["COMPONENTS", "Components (m)", 0, "Number of separate paths. The closest outlines are joined at their closest points until m paths remain. 1 = one path for everything; 0 = every outline separate. A joined path takes the color and line width of its first letter or image, and needs more circles. In Image + text mode this applies to the images"],
     ["LABEL", "Counter size", 40, "Size of the 'n = …  ,  error = …' text in pixels for a 1080-pixel video; 0 hides it"],
     ["LABEL_POS", "Counter height", 0.97, "Height of the counter's top edge from the bottom; 0.9 = 90%"],
@@ -190,10 +190,6 @@ const GROUPS = {
     ["LINE_REL", "Line gap", 0.2, "Space between lines as a fraction of the capital-letter height; 0.1–0.4"],
   ]],
   image: ["Images", [
-    ["IMAGE_SIZE", "Default image size", 0.25, "Size given to newly added images. Only the ratios between sizes and gaps matter"],
-    ["IMG_POS", "Image height", 0.5, "Height of the images' center from the bottom; 0.5 = middle of the frame"],
-    ["IMAGE_GAP", "Image gap", 0.03, "Space between shapes in a row, in the same units as image size; 0.02–0.06"],
-    ["ROW_GAP", "Row gap", 0.04, "Space between rows, in the same units as image size; 0.02–0.08"],
     ["EDGE_BLUR", "Edge blur (px)", 2, "Smooths jagged pixel edges; 0–4"],
     ["MIN_PART", "Ignore small parts", 0.05, "Drop outlines shorter than this fraction of the longest; 0.02–0.2"],
     ["KEEP_HOLES", "Trace holes", true, "Off = trace only the outer border"],
@@ -230,10 +226,12 @@ function saveSettings() { localStorage.setItem(STORE, JSON.stringify(state.setti
 
 const state = { mode: "text", images: [], settings: loadSettings() };
 
+const TEXT_ONLY = new Set(["COLORS", "DRAW_WIDTH"]);   // images set these per image
 function groupsFor(mode) {
   if (mode === "text") return [GROUPS.video, GROUPS.look, GROUPS.extra, GROUPS.timing, GROUPS.text, GROUPS.advanced];
-  if (mode === "images") return [GROUPS.video, GROUPS.look, GROUPS.extra, GROUPS.timing, GROUPS.image, GROUPS.advanced];
-  return [GROUPS.video, GROUPS.look, GROUPS.label, GROUPS.timing, GROUPS.image, GROUPS.text, GROUPS.advanced];
+  const look = [GROUPS.look[0], GROUPS.look[1].filter(([k]) => !TEXT_ONLY.has(k))];
+  if (mode === "images") return [GROUPS.video, look, GROUPS.extra, GROUPS.timing, GROUPS.image, GROUPS.advanced];
+  return [GROUPS.video, look, GROUPS.label, GROUPS.timing, GROUPS.image, GROUPS.text, GROUPS.advanced];
 }
 
 function readSettings(groups) {
@@ -264,7 +262,7 @@ function readSettings(groups) {
   }
   if (!validColor(S.BG) || S.BG in COLORMAPS) throw new Error(`Background: '${S.BG}' is not a color.`);
   if (S.EXTRA_COLOR !== undefined && !CSS.supports("color", S.EXTRA_COLOR)) throw new Error(`Extra text color: '${S.EXTRA_COLOR}' is not a color.`);
-  if (S.DRAW_WIDTH <= 0) throw new Error("Drawing width must be above 0.");
+  if (S.DRAW_WIDTH !== undefined && S.DRAW_WIDTH <= 0) throw new Error("Drawing width must be above 0.");
   if (S.LT_WIDTH !== undefined && S.LT_WIDTH <= 0) throw new Error("Label width must be above 0.");
   if (S.WIDTH % 2 || S.HEIGHT % 2 || Math.min(S.WIDTH, S.HEIGHT) < 64) throw new Error("Width and height must be even numbers of at least 64.");
   if (S.FPS < 1 || S.STAGE_SEC <= 0 || S.SUB < 1) throw new Error("Frames per second, seconds per stage and trace points must be above 0.");
@@ -469,8 +467,8 @@ function imageLoops(bmp, S) {
   return contours(boxBlur(F, W, H, blur), W, H, 0.5);
 }
 
-function imageItems(images, S) {
-  const items = [], notes = [];
+function imageItems(images, S) {   // place each image by its center (x, y) and width, as fractions of the frame
+  const aspect = S.WIDTH / S.HEIGHT, items = [], notes = [], boxes = [], eps = 1e-6;
   images.forEach((im, i) => {
     let loops = imageLoops(im.bitmap, S);
     if (!loops.length) throw new Error(`${im.name}: no shape found.`);
@@ -482,11 +480,16 @@ function imageItems(images, S) {
     loops = loops.map(l => l.map(([x, y]) => [x, -y]));            // image rows go down; flip y
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const l of loops) for (const [x, y] of l) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-    const s = im.size / (y1 - y0);
-    items.push({ rings: loops.map(l => l.map(([x, y]) => [(x - x0) * s, (y - y0) * s])), w: (x1 - x0) * s,
-                 h: im.size, row: im.row, style: im.color || cycle(S.COLORS, i), lw: cycle(S.LINE_WIDTHS, i) });
+    // The frame runs from -aspect/2 to aspect/2 across and -0.5 to 0.5 up, in units of the frame height.
+    const s = im.width * aspect / (x1 - x0), cx = (im.x - 0.5) * aspect, cy = im.y - 0.5;
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, hw = im.width * aspect / 2, hh = s * (y1 - y0) / 2;
+    items.push({ rings: loops.map(l => l.map(([x, y]) => [cx + (x - mx) * s, cy + (y - my) * s])),
+                 style: im.color, lw: cycle(S.LINE_WIDTHS, i) });
+    boxes.push([cx - hw, cx + hw, cy - hh, cy + hh]);
+    if (cx - hw < -aspect / 2 - eps || cx + hw > aspect / 2 + eps || cy - hh < -0.5 - eps || cy + hh > 0.5 + eps)
+      notes.push(`${im.name}: runs off the frame. Change x, y or width.`);
   });
-  return { items, notes };
+  return { items, notes, boxes };
 }
 
 function layout(items, gap, rowGap) {   // rows left to right; center each row and the whole block
@@ -565,11 +568,11 @@ function joinOutlines(items, m) {   // join the closest outlines until m paths r
   return out;
 }
 
-// Build one part (text or images): lay it out, center it, scale its width to frac of the frame
-// width, then join outlines until m paths remain. Coordinates are in units of the video height.
-function buildPart(kind, S, data, frac, m, prefix, widthName) {
-  const { items, notes } = kind === "text" ? textItems(data, S) : imageItems(data, S);
-  let placed = kind === "text" ? layout(items, S.LETTER_REL, S.LINE_REL) : layout(items, S.IMAGE_GAP, S.ROW_GAP);
+// Build text: lay it out, center it, scale its width to frac of the frame width,
+// then join outlines until m paths remain. Coordinates are in units of the video height.
+function buildPart(S, text, frac, m, prefix, widthName) {
+  const { items, notes } = textItems(text, S);
+  let placed = layout(items, S.LETTER_REL, S.LINE_REL);
   if (!placed.length) throw new Error(`${prefix}There is nothing to draw.`);
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const it of placed) for (const r of it.rings) for (const [x, y] of r) {
@@ -585,33 +588,40 @@ function buildPart(kind, S, data, frac, m, prefix, widthName) {
     placed = joinOutlines(placed, m);
     notes.push(`${prefix}${count} outlines joined into ${placed.length} path(s). Joined paths need more circles.`);
   }
-  return { items: placed, notes, height: s * (y1 - y0) };
+  return { items: placed, notes, height: s * (y1 - y0), width: s * (x1 - x0) };
+}
+
+// Build images: imageItems places each one; then join outlines until COMPONENTS paths remain.
+function buildImages(S, images, prefix) {
+  const { items, notes, boxes } = imageItems(images, S);
+  let placed = items;
+  const count = placed.reduce((a, it) => a + it.rings.length, 0);
+  if (S.COMPONENTS > 0 && count > S.COMPONENTS) {
+    placed = joinOutlines(placed, S.COMPONENTS);
+    notes.push(`${prefix}${count} outlines joined into ${placed.length} path(s). Joined paths need more circles.`);
+  }
+  placed.forEach(it => { it.glow = S.GLOW; });
+  return { items: placed, notes, boxes };
 }
 
 function buildItems(mode, S, data) {
-  const shift = (rings, dy) => rings.map(r => r.map(([x, y]) => [x, y + dy]));
   if (mode === "text") {
-    const p = buildPart("text", S, data, S.DRAW_WIDTH, S.COMPONENTS, "", "Drawing width");
+    const p = buildPart(S, data, S.DRAW_WIDTH, S.COMPONENTS, "", "Drawing width");
     p.items.forEach(it => { it.glow = S.GLOW; });
     return p;
   }
   const both = mode === "both";
-  const img = buildPart("images", S, both ? data.images : data, S.DRAW_WIDTH, S.COMPONENTS,
-                        both ? "Images: " : "", "Drawing width");
-  // Move the images so their center sits at IMG_POS of the frame height from the bottom.
-  const iy = S.IMG_POS - 0.5, imgBottom = iy - img.height / 2;
-  img.items.forEach(it => { it.rings = shift(it.rings, iy); it.glow = S.GLOW; });
-  const notes = [...img.notes];
-  if (iy + img.height / 2 > 0.5 || imgBottom < -0.5) notes.push("The images run off the frame. Change Image height or lower Drawing width.");
-  if (!both) return { items: img.items, notes };
+  const img = buildImages(S, both ? data.images : data, both ? "Images: " : "");
+  if (!both) return { items: img.items, notes: img.notes };
 
   const LS = { ...S, COLORS: S.LT_COLORS, LINE_WIDTHS: S.LT_LINE_WIDTHS };
-  const lab = buildPart("text", LS, data.text, S.LT_WIDTH, S.LT_COMPONENTS, "Label: ", "Label width");
+  const lab = buildPart(LS, data.text, S.LT_WIDTH, S.LT_COMPONENTS, "Label: ", "Label width");
   // Move the label so its top edge sits at LT_POS of the frame height from the bottom.
-  const top = S.LT_POS - 0.5, dy = top - lab.height / 2;
-  lab.items.forEach(it => { it.rings = shift(it.rings, dy); it.glow = S.LT_GLOW; });
-  notes.push(...lab.notes);
-  if (top > imgBottom) notes.push("The label overlaps the images. Lower Label height, raise Image height or lower Drawing width.");
+  const top = S.LT_POS - 0.5, dy = top - lab.height / 2, hw = lab.width / 2;
+  lab.items.forEach(it => { it.rings = it.rings.map(r => r.map(([x, y]) => [x, y + dy])); it.glow = S.LT_GLOW; });
+  const notes = [...img.notes, ...lab.notes];
+  if (img.boxes.some(([x0, x1, y0, y1]) => x0 < hw && x1 > -hw && y0 < top && y1 > top - lab.height))
+    notes.push("The label overlaps an image. Change Label height, or the image's x, y or width.");
   if (top - lab.height < -0.5 || top > 0.5) notes.push("The label runs off the frame. Change Label height or lower Label width.");
   return { items: [...img.items, ...lab.items], notes };
 }
@@ -871,7 +881,8 @@ $("files").onchange = async e => {
   for (const file of e.target.files) {
     try {
       const bitmap = await createImageBitmap(file);
-      state.images.push({ name: file.name, bitmap, url: URL.createObjectURL(file), row: "1", size: state.settings.IMAGE_SIZE, color: "" });
+      state.images.push({ name: file.name, bitmap, url: URL.createObjectURL(file),
+                          x: "0.5", y: state.mode === "both" ? "0.6" : "0.5", width: "0.5", color: "hsv" });
     } catch { alert(`${file.name} could not be opened.`); }
   }
   e.target.value = ""; renderImages();
@@ -891,7 +902,7 @@ function renderImages() {
     card.querySelector(".grow").textContent = im.name;
     card.querySelector("button").onclick = () => { state.images.splice(i, 1); renderImages(); };
     const line = card.querySelector(".line");
-    for (const [name, key, cls] of [["Row", "row", ""], ["Size", "size", ""], ["Color", "color", "color"]]) {
+    for (const [name, key, cls] of [["X", "x", ""], ["Y", "y", ""], ["Width", "width", ""], ["Color", "color", "color"]]) {
       const lab = document.createElement("span"); lab.textContent = name;
       const input = document.createElement("input"); input.type = "text"; input.value = im[key]; input.className = cls;
       input.inputMode = key === "color" ? "text" : "decimal"; input.autocapitalize = "off";
@@ -910,11 +921,12 @@ function readText() {
 
 function readImages() {
   if (!state.images.length) throw new Error("Please add at least one image.");
+  const num = v => String(v).trim() === "" ? NaN : Number(v);
   return state.images.map(im => {
-    const row = Number(im.row), size = Number(im.size), color = im.color.trim();
-    if (!Number.isInteger(row) || !(size > 0)) throw new Error(`${im.name}: row must be a whole number and size a positive number.`);
-    if (color && !validColor(color)) throw new Error(`${im.name}: '${color}' is not a colormap or color.`);
-    return { name: im.name, bitmap: im.bitmap, row, size, color };
+    const x = num(im.x), y = num(im.y), width = num(im.width), color = im.color.trim();
+    if (!isFinite(x) || !isFinite(y) || !(width > 0)) throw new Error(`${im.name}: x and y must be numbers and width a positive number.`);
+    if (!validColor(color)) throw new Error(`${im.name}: '${color}' is not a colormap or color.`);
+    return { name: im.name, bitmap: im.bitmap, x, y, width, color };
   });
 }
 
